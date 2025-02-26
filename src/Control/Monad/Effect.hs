@@ -1,5 +1,18 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, LinearTypes #-}
-module Control.Monad.Effect where
+module Control.Monad.Effect
+  ( Eff(..), embedEff
+  , runEff, runEffWithInitData
+  , effCatch, effCatchAll
+  , effThrow, effThrowSystem
+
+  , Module(..), System(..), Loadable(..)
+  , queryModule, queriesModule
+
+  , SystemError(..), NoError
+  , SystemInitData, SystemState, SystemRead, SystemEvent
+
+  , MonadIO(..)
+  ) where
 
 import Data.HList
 import Data.Bifunctor
@@ -7,7 +20,7 @@ import Data.Kind
 import Control.Concurrent.STM
 import Control.Applicative
 import Control.Monad.IO.Class
-import Control.Monad.RST hiding (RSET(..), runRSET)
+import Control.Monad.RST
 import Control.Exception
 
 -- new design idea:
@@ -19,7 +32,7 @@ import Control.Exception
 --
 
 -- | Effectful computation, using modules as units of effect
-newtype Eff mods es a = Eff { runEff :: RSE (SystemRead mods) (SystemState mods) (SList (SystemError : es)) IO a }
+newtype Eff mods es a = Eff { unEff :: RSE (SystemRead mods) (SystemState mods) (SList (SystemError : es)) IO a }
   deriving newtype
     ( Functor, Applicative, Monad, MonadIO
     , MonadReadable (SystemRead mods)
@@ -32,10 +45,31 @@ embedEff :: forall mods mods' es es' a. (EmbedSubList mods mods', SubList mods m
 embedEff eff = Eff $ RSE $ \rs' ss' -> do
   let rs = getSubListF rs'
       ss = getSubListF @mods ss'
-      modsEff = runRSE $ runEff eff
+      modsEff = runRSE $ unEff eff
   (emods, ss1) <- modsEff rs ss
   return (first subListEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEff #-}
+
+runEff :: forall mods es a
+  .  SystemRead mods
+  -> SystemState mods
+  -> Eff mods es a
+  -> IO (Either (SList (SystemError : es)) a, SystemState mods)
+runEff rs ss eff = runRSE (unEff eff) rs ss
+{-# INLINE runEff #-}
+
+runEffWithInitData :: forall mods es a. (System mods)
+  => SystemInitData mods
+  -> Eff mods es a
+  -> IO 
+      (Either SystemError -- ^ if error happens at initialization
+        ( Either (SList (SystemError : es)) a -- ^ if error happens during event loop
+        , SystemState mods)
+      )
+runEffWithInitData initData eff = do
+  initAllModules @mods initData >>= \case
+    Right (rs, ss) -> Right <$> runEff rs ss eff
+    Left e         -> return $ Left e
 
 -------------------------------------- instances --------------------------------------
 
@@ -117,7 +151,7 @@ instance (SubList mods (mod:mods), Module mod, System mods, Loadable mod mods) =
   initAllModules (x :** xs) = do
     initAllModules xs >>= \case
       Right (rs, ss) -> do
-        (er, ss') <- runRSE (runEff @mods $ initModule @mod x) rs ss
+        (er, ss') <- runRSE (unEff @mods $ initModule @mod x) rs ss
         case er of
           (Right (r', s'))      -> return $ Right (r' :** rs, s' :** ss')
           (Left (SHead sysE))   -> return $ Left sysE
@@ -148,11 +182,11 @@ instance (SubList mods (mod:mods), Module mod, System mods, Loadable mod mods) =
 
 effCatch :: Eff mods (e : es) a -> (e -> Eff mods es a) -> Eff mods es a
 effCatch eff h = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (runEff eff) rs ss
+  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
   case eS_E_Es of
     Right a                 -> return (Right a, stateMods)
     Left (SHead sysE)       -> return (Left $ SHead sysE, stateMods)
-    Left (STail (SHead e))  -> runRSE (runEff $ h e) rs ss
+    Left (STail (SHead e))  -> runRSE (unEff $ h e) rs ss
     Left (STail (STail es)) -> return (Left $ STail es, stateMods)
     Left _                  -> error "SEmpty should not be present in error"
   -- return (_ , stateMods)
@@ -160,10 +194,10 @@ effCatch eff h = Eff $ RSE $ \rs ss -> do
 
 effCatchAll :: Eff mods es a -> (SList es -> Eff mods NoError a) -> Eff mods NoError a
 effCatchAll eff h = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (runEff eff) rs ss
+  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
   case eS_E_Es of
     Right a           -> return (Right a, stateMods)
-    Left (STail es)   -> runRSE (runEff $ h es) rs ss
+    Left (STail es)   -> runRSE (unEff $ h es) rs ss
     Left (SHead sysE) -> return (Left $ SHead sysE, stateMods)
     Left _            -> error "SEmpty should not be present in error"
 {-# INLINE effCatchAll #-}
@@ -175,36 +209,3 @@ effThrow e = Eff $ RSE $ \_ s -> pure (Left $ embedS e, s)
 effThrowSystem :: SystemError -> Eff mods '[] a
 effThrowSystem e = Eff $ RSE $ \_ s -> pure (Left $ SHead e, s)
 {-# INLINE effThrowSystem #-}
-
---------------------------------------------------------------------------------------------------
--- 
--- --------------------------------------------------------------------------------------------------
--- 
--- data Database = Database
--- instance Module Database where
---   data ModuleInitData Database = DatabaseInitData { dbPath :: Text, dbMigration :: Migration, dbPoolSize :: Int }
---   data ModuleRead     Database = DatabaseRead { dbPool :: Pool SqlBackend }
---   data ModuleState    Database = DatabaseState
---   data ModuleEvent    Database = DatabaseEvent
---   data ModuleError    Database = DatabaseError deriving Show
--- 
--- instance Logger `In` mods => Loadable Database mods where
---   initModule (DatabaseInitData path migration poolSize) = do
---     logger <- askLoggerIO
---     pool <- liftIO $ runLoggingT
---       ( do
---           pool <- createSqlitePool path poolSize
---           runMigration migration `runSqlPool` pool
---           return pool
---       ) logger
---     return $ Right (DatabaseRead pool, DatabaseState)
---   {-# INLINE initModule #-}
--- 
--- class RunDB m where
---   runDB :: ReaderT SqlBackend IO a -> m a
--- 
--- instance Database `In` mods => RunDB (Eff mods) where
---   runDB action = do
---     DatabaseRead pool <- asks (getF @Database)
---     liftIO $ runSqlPool action pool
---   {-# INLINE runDB #-}
