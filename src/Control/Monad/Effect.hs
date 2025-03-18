@@ -2,7 +2,7 @@
 module Control.Monad.Effect
   ( Eff(..), embedEff, embedError
   , runEff, runEffWithInitData, runEffNoError, runEff0
-  , effCatch, effCatchAll
+  , effCatch, effCatchAll, effCatchSystem
   , effThrow, effThrowSystem
   , effEither, effEitherWith
   , effEitherIn, effEitherInWith
@@ -31,7 +31,7 @@ import Control.Concurrent.STM
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.RST
-import Control.Exception
+import Control.Monad.Catch
 
 -- new design idea:
 -- Remove current SystemError, creating a new type SystemError that is top level and is 
@@ -48,6 +48,20 @@ newtype Eff mods es a = Eff { unEff :: RSE (SystemRead mods) (SystemState mods) 
     , MonadReadable (SystemRead mods)
     , MonadStateful (SystemState mods)
     )
+
+-- | The error in throwM is thrown to the top level as SystemErrorException SomeException
+instance (SubList mods mods) => MonadThrow (Eff mods es) where
+  throwM = embedEff @mods @mods . effThrowSystem . SystemErrorException . toException
+  {-# INLINE throwM #-}
+
+-- | this can only catch SystemErrorException SomeException, other errors are algebraic
+instance (SubList mods mods) => MonadCatch (Eff mods es) where
+  catch ma handler = effCatchSystem ma $ \case
+    SystemErrorException e -> case fromException e of
+      Just e' -> handler e'
+      Nothing -> embedEff @mods @mods . effThrowSystem $ SystemErrorException e
+    e                      -> effThrow e
+  {-# INLINE catch #-}
 
 -- | embed smaller effect into larger effect
 embedEff :: forall mods mods' es es' a. (SubList mods mods', SubList es (SystemError : es'))
@@ -291,6 +305,16 @@ instance (SubList mods (mod:mods), Module mod, SystemArgs mods, Loadable mod mod
     x  <- readInitDataFromArgs @mod @mods im args
     return $ x :** xs
   {-# INLINE readSystemInitDataFromArgs #-}
+
+effCatchSystem :: Eff mods es a -> (SystemError -> Eff mods es a) -> Eff mods es a
+effCatchSystem eff h = Eff $ RSE $ \rs ss -> do
+  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+  case eS_E_Es of
+    Right a                 -> return (Right a, stateMods)
+    Left (SHead sysE)       -> runRSE (unEff $ h sysE) rs ss
+    Left (STail e)          -> return (Left $ STail e, stateMods)
+    Left _                  -> error "SEmpty should not be present in error"
+{-# INLINE effCatchSystem #-}
 
 effCatch :: Eff mods (e : es) a -> (e -> Eff mods es a) -> Eff mods es a
 effCatch eff h = Eff $ RSE $ \rs ss -> do
