@@ -52,7 +52,7 @@ extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common warnings
-    ghc-options: -Wall
+    ghc-options: -Wall -threaded -finfo-table-map -fdistinct-constructor-tables -j8
 
 library
     -- Import common warning flags.
@@ -61,6 +61,7 @@ library
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.RST
                     , Control.Monad.Effect
+                    , Control.Monad.Effect.EventLoop
                     , Data.HList
 
     -- Modules included in this library but not exported.

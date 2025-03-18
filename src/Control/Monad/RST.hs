@@ -161,6 +161,10 @@ class Monad m => MonadStateful s m where
   -- | Get the current state.
   get :: m s
 
+  gets :: (s -> a) -> m a
+  gets f = f <$> get
+  {-# INLINE gets #-}
+
   -- | Set the state to a new value.
   put :: s -> m ()
 
