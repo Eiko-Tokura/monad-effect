@@ -8,6 +8,7 @@ module Control.Monad.Effect
   , effEitherIn, effEitherInWith
   , effEitherSystemWith, effEitherSystemException
   , effMaybeWith, effMaybeInWith
+  , liftIOSafe, effIOSafe, liftIOSafeWith, effIOSafeWith
 
   , Module(..), System(..), Loadable(..)
   , queryModule, queriesModule
@@ -32,6 +33,7 @@ import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.RST
 import Control.Monad.Catch
+import Control.Exception as E
 
 -- new design idea:
 -- Remove current SystemError, creating a new type SystemError that is top level and is 
@@ -305,6 +307,30 @@ instance (SubList mods (mod:mods), Module mod, SystemArgs mods, Loadable mod mod
     x  <- readInitDataFromArgs @mod @mods im args
     return $ x :** xs
   {-# INLINE readSystemInitDataFromArgs #-}
+
+-- | lift IO action into Eff, catch IOException and return as Left, synonym for effIOSafe
+liftIOSafe :: IO a -> Eff mods '[IOException] a
+liftIOSafe = effIOSafe
+{-# INLINE liftIOSafe #-}
+
+-- | lift IO action into Eff, catch IOException into a custom error and return as Left
+liftIOSafeWith :: (IOException -> e) -> IO a -> Eff mods '[e] a
+liftIOSafeWith = effIOSafeWith
+{-# INLINE liftIOSafeWith #-}
+
+-- | lift IO action into Eff, catch IOException and return as Left
+effIOSafe :: IO a -> Eff mods '[IOException] a
+effIOSafe = effIOSafeWith id
+{-# INLINE effIOSafe #-}
+
+-- | lift IO action into Eff, catch IOException into a custom error and return as Left
+effIOSafeWith :: (IOException -> e) -> IO a -> Eff mods '[e] a
+effIOSafeWith f io = Eff $ RSE $ \_ s -> do
+  a :: Either IOException a <- E.try io
+  case a of
+    Right a' -> return (Right a', s)
+    Left e   -> return (Left $ STail $ SHead $ f e, s)
+{-# INLINE effIOSafeWith #-}
 
 effCatchSystem :: Eff mods es a -> (SystemError -> Eff mods es a) -> Eff mods es a
 effCatchSystem eff h = Eff $ RSE $ \rs ss -> do
