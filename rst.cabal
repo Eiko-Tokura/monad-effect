@@ -63,6 +63,7 @@ library
                     , Control.Monad.Effect
                     , Control.Monad.Effect.EventLoop
                     , Data.HList
+                    , Module.RS
 
     -- Modules included in this library but not exported.
     -- other-modules:

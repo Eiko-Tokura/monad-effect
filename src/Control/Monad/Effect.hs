@@ -1,7 +1,9 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
 module Control.Monad.Effect
-  ( Eff(..), embedEff, embedError
+  ( -- * Effectful computation
+    Eff(..), embedEff, embedError
   , runEff, runEffWithInitData, runEffNoError, runEff0
+  , runEffOuter, runEffOuter_
   , effCatch, effCatchAll, effCatchSystem
   , effThrow, effThrowSystem
   , effEither, effEitherWith
@@ -10,6 +12,7 @@ module Control.Monad.Effect
   , effMaybeWith, effMaybeInWith
   , liftIOSafe, effIOSafe, liftIOSafeWith, effIOSafeWith
 
+  -- * Module and System
   , Module(..), System(..), Loadable(..)
   , queryModule, queriesModule
   , getModule, getsModule
@@ -19,9 +22,12 @@ module Control.Monad.Effect
   , SystemInitData, SystemState, SystemRead, SystemEvent
   , SystemInitDataHardCode
 
-  , MonadIO(..)
+  -- * Loadable
   , ModuleInitDataHardCode
   , LoadableEnv(..), LoadableArgs(..), SystemEnv(..), SystemArgs(..)
+
+  -- * Re-exports
+  , MonadIO(..)
   ) where
 
 import Data.HList
@@ -116,6 +122,16 @@ runEffNoError rs ss eff = first (first $ \case
 runEff0 :: Eff '[] '[] a -> IO (Either SystemError a)
 runEff0 = fmap fst . runEffNoError FNil FNil
 {-# INLINE runEff0 #-}
+
+runEffOuter :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es (ModuleState mod, a)
+runEffOuter mread mstate eff = Eff . RSE
+  $ \modsRead modsState ->
+    (\(ea, (s :** ss)) -> ((s,) <$> ea, ss)) <$> runRSE (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
+
+runEffOuter_ :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es a
+runEffOuter_ mread mstate eff = Eff . RSE
+  $ \modsRead modsState ->
+    (\(ea, (_ :** ss)) -> (ea, ss)) <$> runRSE (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
 
 -------------------------------------- instances --------------------------------------
 
