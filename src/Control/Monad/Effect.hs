@@ -123,6 +123,7 @@ runEff0 :: Eff '[] '[] a -> IO (Either SystemError a)
 runEff0 = fmap fst . runEffNoError FNil FNil
 {-# INLINE runEff0 #-}
 
+-- | Warning: state will lose when you have an error
 runEffOuter :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es (ModuleState mod, a)
 runEffOuter mread mstate eff = Eff . RSE
   $ \modsRead modsState ->

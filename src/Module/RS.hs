@@ -3,30 +3,37 @@ module Module.RS where
 import Control.Monad.Effect
 import Data.Kind
 import Data.HList ( In )
-
--- data RModule (r :: Type) (s :: Type)
--- 
--- instance Module (RSModule r s) where
---   data ModuleInitData (RSModule r s) = RSInitData { rsInitRead :: r, rsInitState :: s }
---   data ModuleRead  (RSModule r s)    = RSRead  { rsRead :: r }
---   data ModuleState (RSModule r s)    = RSState { rsState :: s }
---   data ModuleEvent (RSModule r s)    = RSEvent
+import Data.Bifunctor (first)
 
 data RModule (r :: Type)
 
 instance Module (RModule r) where
-  data ModuleInitData (RModule r) = RInitData { rInitRead :: r }
-  data ModuleRead  (RModule r)    = RRead
-  data ModuleState (RModule r)    = RState { rState :: r }
-  data ModuleEvent (RModule r)    = REvent
+  newtype ModuleInitData (RModule r) = RInitData { rInitRead :: r }
+  data    ModuleRead  (RModule r)    = RRead
+  newtype ModuleState (RModule r)    = RState { rState :: r }
+  data    ModuleEvent (RModule r)    = REvent
 
 data SModule (s :: Type)
 
 instance Module (SModule s) where
-  data ModuleInitData (SModule s) = SInitData { sInitState :: s }
-  data ModuleRead  (SModule s)    = SRead
-  data ModuleState (SModule s)    = SState { sState :: s }
-  data ModuleEvent (SModule s)    = SEvent
+  newtype ModuleInitData (SModule s) = SInitData { sInitState :: s }
+  data    ModuleRead  (SModule s)    = SRead
+  newtype ModuleState (SModule s)    = SState { sState :: s }
+  data    ModuleEvent (SModule s)    = SEvent
+
+runRModule :: r -> Eff (RModule r : mods) errs a -> Eff mods errs a
+runRModule r = runEffOuter_ RRead (RState r)
+{-# INLINE runRModule #-}
+
+-- | Warning: state will lose when you have an error
+runSModule :: s -> Eff (SModule s : mods) errs a -> Eff mods errs (s, a)
+runSModule s
+  = fmap (first $ \(SState s') -> s')
+  . runEffOuter SRead (SState s)
+
+runSModule_ :: s -> Eff (SModule s : mods) errs a -> Eff mods errs a
+runSModule_ s = runEffOuter_ SRead (SState s)
+{-# INLINE runSModule_ #-}
 
 ask :: forall r mods errs. ((RModule r) `In` mods) => Eff mods errs r
 ask = do
@@ -70,7 +77,6 @@ put s = do
 
 modify :: forall s mods errs. ((SModule s) `In` mods) => (s -> s) -> Eff mods errs ()
 modify f = do
-  s <- get @s
+  s <- get
   put (f s)
 {-# INLINE modify #-}
-
