@@ -1,7 +1,7 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
 module Control.Monad.Effect
   ( -- * Effectful computation
-    Eff
+    Eff(..)
   , embedEff, embedMods, embedError
   , runEff, runEffWithInitData, runEffNoError, runEff0
   , runEffOuter, runEffOuter_
