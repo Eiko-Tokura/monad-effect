@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
+{-# LANGUAGE UndecidableSuperClasses, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 -- | This module provides utilities for working with type-level lists in Haskell.
 -- It defines various types and functions to manipulate type-level lists, including
@@ -8,6 +8,7 @@ module Data.HList where
 import Data.Kind
 import Data.Proxy
 import Data.Default
+import GHC.TypeError
 
 -- | A type-level list applied to a type-level function, representing a product.
 -- It has a strict head and a lazy tail.
@@ -23,6 +24,45 @@ data SList (ts :: [Type]) where
   SHead  :: t -> SList (t : ts)
   STail  :: SList ts -> SList (t : ts)
 
+-- | Sum of types, but non-empty.
+-- You cannot construct EList '[]
+data EList (ts :: [Type]) where
+  EHead :: !t -> EList (t : ts)
+  ETail :: !(EList ts) -> EList (t : ts)
+
+-- | Error type that adapt to the type-level list of errors.
+data Result (es :: [Type]) (a :: Type) where
+  RSuccess :: a -> Result es a
+  RFailure :: !(EList es) -> Result es a
+
+resultNoError :: Result '[] a -> a
+resultNoError (RSuccess a) = a
+
+resultToEither :: Result (e ': es) a -> Either (EList (e ': es)) a
+resultToEither (RSuccess a) = Right a
+resultToEither (RFailure es) = Left es
+
+testExaustive :: EList '[Int] -> Int
+testExaustive (EHead x) = x
+
+instance Functor (Result es) where
+  fmap f (RSuccess a)  = RSuccess (f a)
+  fmap _ (RFailure es) = RFailure es
+  {-# INLINE fmap #-}
+
+instance Applicative (Result es) where
+  pure = RSuccess
+  RSuccess f <*> RSuccess a = RSuccess (f a)
+  RFailure es <*> _ = RFailure es
+  _ <*> RFailure es = RFailure es
+  {-# INLINE pure #-}
+  {-# INLINE (<*>) #-}
+
+instance Monad (Result es) where
+  RSuccess a >>= f = f a
+  RFailure es >>= _ = RFailure es
+  {-# INLINE (>>=) #-}
+
 -- | A type-level list applied to a type-level function, representing a sum.
 data UList (f :: Type -> Type) (ts :: [Type]) where
   UNil  :: UList f '[]
@@ -33,7 +73,6 @@ data UList (f :: Type -> Type) (ts :: [Type]) where
 data Subtract (ts :: [Type]) (sub :: [Type]) (rs :: [Type]) where
   SubNil   :: Subtract ts '[] ts
   SubAddAC :: t -> Subtract as bs cs -> Subtract (t : as) bs (t : cs)
-
 
 ---------------------------------- Constraint Lists ----------------------------------
 
@@ -190,16 +229,27 @@ getSub SZ _        = Nil
 getSub (SS e t) xs = getE e xs :* getSub t xs
 
 -- | A class carrying the proof of the existence of an element in a list.
-class In e (ts :: [Type]) where
+class UniqueIn e ts => In e (ts :: [Type]) where
   getH :: HList ts -> e                               -- ^ Get the element from the HList.
   getF :: FList f ts -> f e                           -- ^ Get the element from the FList.
   modifyH :: (e -> e) -> HList ts -> HList ts         -- ^ Modify the element in the HList.
   modifyF :: (f e -> f e) -> FList f ts -> FList f ts -- ^ Modify the element in the FList.
   embedU :: f e -> UList f ts                         -- ^ Embed the element into a UList.
   embedS :: e -> SList ts                             -- ^ Embed the element into a SList.
+  embedE :: e -> EList ts                             -- ^ Embed the element into an EList.
+
+type family NotIn (e :: Type) (ts :: [Type]) :: Constraint where
+  NotIn e '[] = ()
+  NotIn e (e ': ts) = TypeError ('Text "Type " ':<>: 'ShowType e ':<>: 'Text " is already in the list")
+  NotIn e (t ': ts) = NotIn e ts
+
+type family UniqueIn (e :: Type) (ts :: [Type]) :: Constraint where
+  UniqueIn e '[] = ()
+  UniqueIn e (e ': ts) = NotIn e ts
+  UniqueIn e (t ': ts) = UniqueIn e ts
 
 -- | Base case for the In class.
-instance In e (e : ts) where
+instance NotIn e ts => In e (e : ts) where
   getH h = h !: EZ
   {-# INLINE getH #-}
   getF = getEF EZ
@@ -212,9 +262,11 @@ instance In e (e : ts) where
   {-# INLINE embedU #-}
   embedS = SHead
   {-# INLINE embedS #-}
+  embedE = EHead
+  {-# INLINE embedE #-}
 
 -- | Inductive case for the In class.
-instance {-# OVERLAPPABLE #-} In e ts => In e (t : ts) where
+instance {-# OVERLAPPABLE #-} (UniqueIn e (t : ts), In e ts) => In e (t : ts) where
   getH (_ :* xs) = getH xs
   {-# INLINE getH #-}
   getF (_ :** xs) = getF xs
@@ -227,6 +279,8 @@ instance {-# OVERLAPPABLE #-} In e ts => In e (t : ts) where
   {-# INLINE embedU #-}
   embedS x = STail $ embedS x
   {-# INLINE embedS #-}
+  embedE x = ETail $ embedE x
+  {-# INLINE embedE #-}
 
 -- | Sum of two type-level lists.
 hAdd :: HList as -> HList bs -> HList (as ++ bs)
@@ -244,6 +298,8 @@ class SubList (ys :: [Type]) (xs :: [Type]) where
   {-# INLINE subListUpdate #-}
 
   subListEmbed   :: SList ys -> SList xs
+
+  subListErrorEmbed :: Result ys a -> Result xs a
 
   subListUpdateF :: FList f xs -> FList f ys -> FList f xs -- Update the sublist in the FList.
   subListUpdateF xs ys = subListModifyF (const ys) xs
@@ -281,6 +337,8 @@ instance SubList '[] xs where
   {-# INLINE subListModifyF #-}
   subListEmbed _ = SEmpty
   {-# INLINE subListEmbed #-}
+  subListErrorEmbed (RSuccess a) = RSuccess a
+  {-# INLINE subListErrorEmbed #-}
 
 -- | Induction case for the SubList class.
 instance (In y xs, SubList ys xs) => SubList (y : ys) xs where
@@ -300,4 +358,7 @@ instance (In y xs, SubList ys xs) => SubList (y : ys) xs where
   subListEmbed (SHead y)  = embedS y
   subListEmbed (STail ys) = subListEmbed ys
   {-# INLINE subListEmbed #-}
-
+  subListErrorEmbed (RSuccess a)          = RSuccess a
+  subListErrorEmbed (RFailure (EHead y))  = RFailure (embedE y)
+  subListErrorEmbed (RFailure (ETail ys)) = subListErrorEmbed (RFailure ys)
+  {-# INLINE subListErrorEmbed #-}

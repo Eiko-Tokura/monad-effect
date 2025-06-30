@@ -4,6 +4,9 @@
 -- reading from a shared environment. It defines the 'RS' and 'RST'
 -- types, which allow for a combination of stateful computations and
 -- read operations in a flexible manner.
+--
+-- It also provides two interface MonadReadable and MonadStateful for
+-- simple and extensible state and read effects.
 module Control.Monad.RST
   ( RS(..), RST(..), runRST
   , MonadReadable(..), MonadStateful(..)
@@ -143,6 +146,7 @@ instance MonadTrans (RSE r s e) where
 --------------------------------------------------------------------------------
 
 -- | A class for monads that can read a value of type 'r'.
+-- without the functional dependencies, so you can read different types of values
 class Monad m => MonadReadable r m where
   {-# MINIMAL query, local #-}
   -- | Query the monad for a value of type 'r'.
@@ -156,6 +160,7 @@ class Monad m => MonadReadable r m where
   local :: (r -> r) -> m a -> m a
 
 -- | A class for monads that can maintain a state of type 's'.
+-- without the functional dependencies, so you can have different types of states
 class Monad m => MonadStateful s m where
   {-# MINIMAL get, put #-}
   -- | Get the current state.
@@ -313,4 +318,3 @@ catchAll (RSET m) h = RSET $ RSE $ \r s -> do
 throwE :: Applicative m => In e es => e -> RSET r s es m a
 throwE e = RSET $ RSE $ \_ s -> pure (Left (embedS e), s)
 {-# INLINE throwE #-}
-

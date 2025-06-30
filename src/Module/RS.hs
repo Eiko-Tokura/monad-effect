@@ -2,9 +2,11 @@ module Module.RS where
 
 import Control.Monad.Effect
 import Data.Kind
-import Data.HList ( In )
+import Data.HList ( In, NotIn, SubList )
 import Data.Bifunctor (first)
+import qualified Control.Monad.State as S
 
+-- | A module that provides reader functionality
 data RModule (r :: Type)
 
 instance Module (RModule r) where
@@ -13,6 +15,7 @@ instance Module (RModule r) where
   newtype ModuleState (RModule r)    = RState { rState :: r }
   data    ModuleEvent (RModule r)    = REvent
 
+-- | A module that provides state functionality
 data SModule (s :: Type)
 
 instance Module (SModule s) where
@@ -20,6 +23,28 @@ instance Module (SModule s) where
   data    ModuleRead  (SModule s)    = SRead
   newtype ModuleState (SModule s)    = SState { sState :: s }
   data    ModuleEvent (SModule s)    = SEvent
+
+embedStateT :: forall s mods errs a. ((SModule s) `In` mods) => S.StateT s (Eff mods errs) a -> Eff mods errs a
+embedStateT action = do
+  SState s <- getModule @(SModule s)
+  (a, s') <- S.runStateT action s
+  putModule @(SModule s) (SState s')
+  return a
+{-# INLINE embedStateT #-}
+
+addStateT :: forall s mods errs a.
+  ( mods `SubList` (SModule s : mods)
+  , errs `SubList` (SystemError : errs)
+  , NotIn SystemError errs
+  , (SModule s) `NotIn` mods
+  )
+  => S.StateT s (Eff mods errs) a -> Eff (SModule s : mods) errs a
+addStateT action = do
+  SState s <- getModule @(SModule s)
+  (a, s') <- embedEff $ S.runStateT action s
+  putModule (SState s')
+  return a
+{-# INLINE addStateT #-}
 
 runRModule :: r -> Eff (RModule r : mods) errs a -> Eff mods errs a
 runRModule r = runEffOuter_ RRead (RState r)
@@ -35,48 +60,48 @@ runSModule_ :: s -> Eff (SModule s : mods) errs a -> Eff mods errs a
 runSModule_ s = runEffOuter_ SRead (SState s)
 {-# INLINE runSModule_ #-}
 
-ask :: forall r mods errs. ((RModule r) `In` mods) => Eff mods errs r
-ask = do
+askR :: forall r mods errs. ((RModule r) `In` mods) => Eff mods errs r
+askR = do
   RState r <- getModule @(RModule r)
   return r
-{-# INLINE ask #-}
+{-# INLINE askR #-}
 
-asks :: forall r mods errs a. ((RModule r) `In` mods) => (r -> a) -> Eff mods errs a
-asks f = do
+asksR :: forall r mods errs a. ((RModule r) `In` mods) => (r -> a) -> Eff mods errs a
+asksR f = do
   RState r <- getModule @(RModule r)
   return (f r)
-{-# INLINE asks #-}
+{-# INLINE asksR #-}
 
-local :: forall r mods errs a. ((RModule r) `In` mods) => (r -> r) -> Eff mods errs a -> Eff mods errs a
-local f action = do
+localR :: forall r mods errs a. ((RModule r) `In` mods) => (r -> r) -> Eff mods errs a -> Eff mods errs a
+localR f action = do
   RState r <- getModule @(RModule r)
   let r' = f r
   putModule @(RModule r) (RState r')
   result <- action
   putModule @(RModule r) (RState r)
   return result
-{-# INLINE local #-}
+{-# INLINE localR #-}
 
-get :: forall s mods errs. ((SModule s) `In` mods) => Eff mods errs s
-get = do
+getS :: forall s mods errs. ((SModule s) `In` mods) => Eff mods errs s
+getS = do
   SState s <- getModule @(SModule s)
   return s
-{-# INLINE get #-}
+{-# INLINE getS #-}
 
-gets :: forall s mods errs a. ((SModule s) `In` mods) => (s -> a) -> Eff mods errs a
-gets f = do
+getsS :: forall s mods errs a. ((SModule s) `In` mods) => (s -> a) -> Eff mods errs a
+getsS f = do
   SState s <- getModule @(SModule s)
   return (f s)
-{-# INLINE gets #-}
+{-# INLINE getsS #-}
 
-put :: forall s mods errs. ((SModule s) `In` mods) => s -> Eff mods errs ()
-put s = do
+putS :: forall s mods errs. ((SModule s) `In` mods) => s -> Eff mods errs ()
+putS s = do
   SState _ <- getModule @(SModule s)
   putModule @(SModule s) (SState s)
-{-# INLINE put #-}
+{-# INLINE putS #-}
 
-modify :: forall s mods errs. ((SModule s) `In` mods) => (s -> s) -> Eff mods errs ()
-modify f = do
-  s <- get
-  put (f s)
-{-# INLINE modify #-}
+modifyS :: forall s mods errs. ((SModule s) `In` mods) => (s -> s) -> Eff mods errs ()
+modifyS f = do
+  s <- getS
+  putS (f s)
+{-# INLINE modifyS #-}

@@ -1,7 +1,7 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
 module Control.Monad.Effect
   ( -- * Effectful computation
-    Eff(..), embedEff, embedError
+    Eff(..), embedEff, embedMods, embedError
   , runEff, runEffWithInitData, runEffNoError, runEff0
   , runEffOuter, runEffOuter_
   , effCatch, effCatchAll, effCatchSystem
@@ -58,12 +58,12 @@ newtype Eff mods es a = Eff { unEff :: RSE (SystemRead mods) (SystemState mods) 
     )
 
 -- | The error in throwM is thrown to the top level as SystemErrorException SomeException
-instance (SubList mods mods) => MonadThrow (Eff mods es) where
+instance (SubList mods mods, NotIn SystemError es) => MonadThrow (Eff mods es) where
   throwM = embedEff @mods @mods . effThrowSystem . SystemErrorException . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch SystemErrorException SomeException, other errors are algebraic
-instance (SubList mods mods) => MonadCatch (Eff mods es) where
+instance (SubList mods mods, SystemError `NotIn` es) => MonadCatch (Eff mods es) where
   catch ma handler = effCatchSystem ma $ \case
     SystemErrorException e -> case fromException e of
       Just e' -> handler e'
@@ -72,7 +72,7 @@ instance (SubList mods mods) => MonadCatch (Eff mods es) where
   {-# INLINE catch #-}
 
 -- | embed smaller effect into larger effect
-embedEff :: forall mods mods' es es' a. (SubList mods mods', SubList es (SystemError : es'))
+embedEff :: forall mods mods' es es' a. (SubList mods mods', SubList es (SystemError : es'), NotIn SystemError es')
   => Eff mods es a -> Eff mods' es' a
 embedEff eff = Eff $ RSE $ \rs' ss' -> do
   let rs = getSubListF rs'
@@ -82,7 +82,13 @@ embedEff eff = Eff $ RSE $ \rs' ss' -> do
   return (first subListEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEff #-}
 
-embedError :: (SubList mods mods, SubList es (SystemError : es')) => Eff mods es a -> Eff mods es' a
+embedMods :: (SubList mods mods', SubList es (SystemError : es), NotIn SystemError es)
+  => Eff mods es a -> Eff mods' es a
+embedMods = embedEff
+{-# INLINE embedMods #-}
+
+embedError :: (SubList mods mods, SubList es (SystemError : es'), NotIn SystemError es')
+  => Eff mods es a -> Eff mods es' a
 embedError = embedEff
 {-# INLINE embedError #-}
 

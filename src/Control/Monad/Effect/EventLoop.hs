@@ -26,4 +26,3 @@ eventLoopWithReleaseRestartIO :: forall mods . (System mods) => SystemInitData m
 eventLoopWithReleaseRestartIO initData = do
   _ <- runEffWithInitData @mods initData eventLoopWithRelease
   eventLoopWithReleaseRestartIO initData
-
