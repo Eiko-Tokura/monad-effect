@@ -2,6 +2,7 @@
 module Control.Monad.Effect
   ( -- * Effectful computation
     Eff(..)
+  , ErrorText(..)
   , embedEff, embedMods, embedError
   , runEff, runEff_, runEff0, runEff01, runEff00
   , runEffWithInitData, runEffNoError
@@ -12,12 +13,11 @@ module Control.Monad.Effect
   , effEitherIn, effEitherInWith
   , effEitherSystemWith, effEitherSystemException
   , effMaybeWith, effMaybeInWith
-  , liftIOException, effIOException
-  , liftIOAt, effIOAt
-  , liftIOSafeWith, effIOSafeWith
+  , liftIOException, liftIOAt, liftIOSafeWith, liftIOText
 
   , proofEmbedEff
   , declareNoError
+  , checkNoError
 
   -- * Module and System
   , Module(..), System(..), Loadable(..)
@@ -40,16 +40,35 @@ module Control.Monad.Effect
 import Data.HList
 import Data.Bifunctor
 import Data.Kind
-import Data.Text (Text)
+import Data.Text (Text, unpack, pack)
+import Data.Proxy
+import Data.String (IsString)
+import GHC.TypeError
+import GHC.TypeLits
 import Control.Concurrent.STM
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.RST
 import Control.Monad.Catch
-import Control.Exception as E
+import Control.Exception as E hiding (TypeError)
 
 -- | Effectful computation, using modules as units of effect
 newtype Eff mods es a = Eff { unEff :: SystemRead mods -> SystemState mods -> IO (Result es a, SystemState mods) }
+
+type family MonadNoError m :: Constraint where
+  MonadNoError (Eff mods NoError) = ()
+  MonadNoError (Eff mods es     ) = TypeError ('Text "MonadNoError: the effect has error, catch them")
+  MonadNoError _ = TypeError ('Text "MonadNoError: not an Eff type")
+
+checkNoError :: MonadNoError m => m a -> m a
+checkNoError = id
+{-# INLINE checkNoError #-}
+
+newtype ErrorText (s :: Symbol) = ErrorText Text
+  deriving newtype (IsString)
+
+instance KnownSymbol s => Show (ErrorText s) where
+  show (ErrorText t) = "Error of type " ++ symbolVal (Proxy @s) ++ ": " ++ unpack t
 
 instance Functor (Eff mods es) where
   fmap f (Eff eff) = Eff $ \rs ss -> first (fmap f) <$> eff rs ss
@@ -399,35 +418,25 @@ declareNoError eff = eff `effCatchAll` \_es -> error "unsafeDeclareNoError: decl
 
 -- | lift IO action into Eff, catch IOException and return as Left, synonym for effIOSafe
 liftIOException :: IO a -> Eff mods '[IOException] a
-liftIOException = effIOException
+liftIOException = liftIOAt
 {-# INLINE liftIOException #-}
 
 liftIOAt :: Exception e => IO a -> Eff mods '[e] a
-liftIOAt = effIOAt
+liftIOAt = liftIOSafeWith id
 {-# INLINE liftIOAt #-}
 
--- | lift IO action into Eff, catch IOException and return as Left
-effIOException :: IO a -> Eff mods '[IOException] a
-effIOException = effIOSafeWith id
-{-# INLINE effIOException #-}
-
-effIOAt :: Exception e => IO a -> Eff mods '[e] a
-effIOAt = effIOSafeWith id
-{-# INLINE effIOAt #-}
+liftIOText :: forall s mods a. (Text -> Text) -> IO a -> Eff mods '[ErrorText s] a
+liftIOText err = liftIOSafeWith (\(e :: SomeException) -> ErrorText $ err $ pack $ show e)
+{-# INLINE liftIOText #-}
 
 -- | lift IO action into Eff, catch IOException into a custom error and return as Left
-liftIOSafeWith :: (IOException -> e) -> IO a -> Eff mods '[e] a
-liftIOSafeWith = effIOSafeWith
-{-# INLINE liftIOSafeWith #-}
-
--- | lift IO action into Eff, catch IOException into a custom error and return as Left
-effIOSafeWith :: Exception e' => (e' -> e) -> IO a -> Eff mods '[e] a
-effIOSafeWith f io = Eff $ \_ s -> do
+liftIOSafeWith :: Exception e' => (e' -> e) -> IO a -> Eff mods '[e] a
+liftIOSafeWith f io = Eff $ \_ s -> do
   a :: Either e' a <- E.try io
   case a of
     Right a' -> return (RSuccess a', s)
     Left e'  -> return (RFailure $ EHead $ f e', s)
-{-# INLINE effIOSafeWith #-}
+{-# INLINE liftIOSafeWith #-}
 
 effCatchSystem :: (SystemError `In` es) => Eff mods es a -> (SystemError -> Eff mods es a) -> Eff mods es a
 effCatchSystem eff h = Eff $ \rs ss -> do
@@ -451,8 +460,8 @@ effCatch eff h = Eff $ \rs ss -> do
 
 effCatchAll :: Eff mods es a -> (EList es -> Eff mods NoError a) -> Eff mods NoError a
 effCatchAll eff h = Eff $ \rs ss -> do
-  (eS_E_Es, stateMods) <- (unEff eff) rs ss
-  case eS_E_Es of
+  (er, stateMods) <- (unEff eff) rs ss
+  case er of
     RSuccess a    -> return (RSuccess a, stateMods)
     RFailure es   -> (unEff $ h es) rs ss
 {-# INLINE effCatchAll #-}
