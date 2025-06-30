@@ -42,8 +42,12 @@ resultToEither :: Result (e ': es) a -> Either (EList (e ': es)) a
 resultToEither (RSuccess a) = Right a
 resultToEither (RFailure es) = Left es
 
-testExaustive :: EList '[Int] -> Int
-testExaustive (EHead x) = x
+resultMapErrors :: (EList es -> EList es') -> Result es a -> Result es' a
+resultMapErrors _ (RSuccess a) = RSuccess a
+resultMapErrors f (RFailure es) = RFailure (f es)
+
+elistSingleton :: EList '[s] -> s
+elistSingleton (EHead x) = x
 
 instance Functor (Result es) where
   fmap f (RSuccess a)  = RSuccess (f a)

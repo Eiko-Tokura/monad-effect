@@ -41,53 +41,87 @@ import Control.Monad.RST
 import Control.Monad.Catch
 import Control.Exception as E
 
--- new design idea:
--- Remove current SystemError, creating a new type SystemError that is top level and is 
--- used to break the event loop. Other errors should not be present on top level.
---
--- so there should be an error list field in Eff, on system level they need to be empty
--- forcing the user to handle all errors inside module level, or throw them to the top level
---
-
 -- | Effectful computation, using modules as units of effect
-newtype Eff mods es a = Eff { unEff :: RSE (SystemRead mods) (SystemState mods) (SList (SystemError : es)) IO a }
-  deriving newtype
-    ( Functor, Applicative, Monad, MonadIO
-    , MonadReadable (SystemRead mods)
-    , MonadStateful (SystemState mods)
-    )
+newtype Eff mods es a = Eff { unEff :: (SystemRead mods) -> (SystemState mods) -> IO (Result es a, SystemState mods) }
+
+instance Functor (Eff mods es) where
+  fmap f (Eff eff) = Eff $ \rs ss -> first (fmap f) <$> eff rs ss
+  {-# INLINE fmap #-}
+
+instance Applicative (Eff mods es) where
+  pure a = Eff $ \_ ss -> return (RSuccess a, ss)
+  {-# INLINE pure #-}
+
+  Eff effF <*> Eff effA = Eff $ \rs ss -> do
+    (eF, ss1) <- effF rs ss
+    case eF of
+      RSuccess f -> do
+        (eA, ss2) <- effA rs ss1
+        case eA of
+          RSuccess a -> return (RSuccess (f a), ss2)
+          RFailure es -> return (RFailure $ es, ss2)
+      RFailure es -> return (RFailure es, ss1)
+  {-# INLINE (<*>) #-}
+
+instance Monad (Eff mods es) where
+  Eff eff >>= f = Eff $ \rs ss -> do
+    (eResult, ss1) <- eff rs ss
+    case eResult of
+      RSuccess a  -> unEff (f a) rs ss1
+      RFailure es -> return (RFailure es, ss1)
+  {-# INLINE (>>=) #-}
+
+instance MonadIO (Eff mods es) where
+  liftIO io = Eff $ \_ ss -> do
+    a <- io
+    return (RSuccess a, ss)
+  {-# INLINE liftIO #-}
+
+instance MonadReadable (SystemRead mods) (Eff mods es) where
+  query = Eff $ \rs ss -> return (RSuccess rs, ss)
+  {-# INLINE query #-}
+  local f (Eff eff) = Eff $ \rs ss -> eff (f rs) ss
+  {-# INLINE local #-}
+
+instance MonadStateful (SystemState mods) (Eff mods es) where
+  get = Eff $ \_ ss -> return (RSuccess ss, ss)
+  {-# INLINE get #-}
+  put ss = Eff $ \_ _ -> return (RSuccess (), ss)
+  {-# INLINE put #-}
+  modify f = Eff $ \_ ss -> return (RSuccess (), f ss)
+  {-# INLINE modify #-}
 
 -- | The error in throwM is thrown to the top level as SystemErrorException SomeException
-instance (SubList mods mods, NotIn SystemError es) => MonadThrow (Eff mods es) where
-  throwM = embedEff @mods @mods . effThrowSystem . SystemErrorException . toException
+instance (SubList mods mods, SubList es es, SubList es (SystemError : es), In SystemError es) => MonadThrow (Eff mods es) where
+  throwM = embedEff @mods @mods @es @es . effThrowSystem @es . SystemErrorException . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch SystemErrorException SomeException, other errors are algebraic
-instance (SubList mods mods, SystemError `NotIn` es) => MonadCatch (Eff mods es) where
+instance (SubList mods mods, SubList es es, SubList es (SystemError : es), In SystemError es) => MonadCatch (Eff mods es) where
   catch ma handler = effCatchSystem ma $ \case
     SystemErrorException e -> case fromException e of
       Just e' -> handler e'
-      Nothing -> embedEff @mods @mods . effThrowSystem $ SystemErrorException e
+      Nothing -> embedEff @mods @mods . effThrowSystem @es $ SystemErrorException e
     e                      -> effThrow e
   {-# INLINE catch #-}
 
 -- | embed smaller effect into larger effect
-embedEff :: forall mods mods' es es' a. (SubList mods mods', SubList es (SystemError : es'), NotIn SystemError es')
+embedEff :: forall mods mods' es es' a. (SubList mods mods', SubList es es')
   => Eff mods es a -> Eff mods' es' a
-embedEff eff = Eff $ RSE $ \rs' ss' -> do
+embedEff eff = Eff $ \rs' ss' -> do
   let rs = getSubListF rs'
       ss = getSubListF @mods ss'
-      modsEff = runRSE $ unEff eff
+      modsEff = unEff eff
   (emods, ss1) <- modsEff rs ss
-  return (first subListEmbed emods, subListUpdateF ss' ss1)
+  return (subListErrorEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEff #-}
 
-embedMods :: (SubList mods mods', SubList es (SystemError : es), NotIn SystemError es)
+embedMods :: (SubList mods mods', SubList es es, NotIn SystemError es)
   => Eff mods es a -> Eff mods' es a
 embedMods = embedEff
 {-# INLINE embedMods #-}
 
-embedError :: (SubList mods mods, SubList es (SystemError : es'), NotIn SystemError es')
+embedError :: (SubList mods mods, SubList es es', NotIn SystemError es')
   => Eff mods es a -> Eff mods es' a
 embedError = embedEff
 {-# INLINE embedError #-}
@@ -96,8 +130,8 @@ runEff :: forall mods es a
   .  SystemRead mods
   -> SystemState mods
   -> Eff mods es a
-  -> IO (Either (SList (SystemError : es)) a, SystemState mods)
-runEff rs ss eff = runRSE (unEff eff) rs ss
+  -> IO (Result es a, SystemState mods)
+runEff rs ss eff = unEff eff rs ss
 {-# INLINE runEff #-}
 
 -- | If error happens at initialization, it will return Left SystemError
@@ -107,7 +141,7 @@ runEffWithInitData :: forall mods es a. (System mods)
   -> Eff mods es a
   -> IO 
       (Either SystemError -- ^ if error happens at initialization
-        ( Either (SList (SystemError : es)) a -- ^ if error happens during event loop
+        ( Result es a -- ^ if error happens during event loop
         , SystemState mods)
       )
 runEffWithInitData initData eff = do
@@ -119,26 +153,23 @@ runEffNoError :: forall mods a
   .  SystemRead mods
   -> SystemState mods
   -> Eff mods NoError a
-  -> IO (Either SystemError a, SystemState mods)
-runEffNoError rs ss eff = first (first $ \case
-    SHead e -> e
-    _       -> SystemErrorText "SEmpty error"
-  ) <$> runRSE (unEff eff) rs ss
+  -> IO (a, SystemState mods)
+runEffNoError rs ss eff = first resultNoError <$> unEff eff rs ss
 
-runEff0 :: Eff '[] '[] a -> IO (Either SystemError a)
+runEff0 :: Eff '[] '[] a -> IO a
 runEff0 = fmap fst . runEffNoError FNil FNil
 {-# INLINE runEff0 #-}
 
 -- | Warning: state will lose when you have an error
 runEffOuter :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es (ModuleState mod, a)
-runEffOuter mread mstate eff = Eff . RSE
+runEffOuter mread mstate eff = Eff
   $ \modsRead modsState ->
-    (\(ea, (s :** ss)) -> ((s,) <$> ea, ss)) <$> runRSE (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
+    (\(ea, (s :** ss)) -> ((s,) <$> ea, ss)) <$> (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
 
 runEffOuter_ :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es a
-runEffOuter_ mread mstate eff = Eff . RSE
+runEffOuter_ mread mstate eff = Eff
   $ \modsRead modsState ->
-    (\(ea, (_ :** ss)) -> (ea, ss)) <$> runRSE (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
+    (\(ea, (_ :** ss)) -> (ea, ss)) <$> (unEff @(mod:mods) eff) (mread :** modsRead) (mstate :** modsState)
 
 -------------------------------------- instances --------------------------------------
 
@@ -283,12 +314,9 @@ instance (SubList mods (mod:mods), Module mod, System mods, Loadable mod mods) =
   initAllModules (x :** xs) = do
     initAllModules xs >>= \case
       Right (rs, ss) -> do
-        (er, ss') <- runRSE (unEff @mods $ initModule @mod x) rs ss
+        (er, ss') <- (unEff @mods $ initModule @mod x) rs ss
         case er of
-          (Right (r', s'))      -> return $ Right (r' :** rs, s' :** ss')
-          (Left (SHead sysE))   -> return $ Left sysE
-          (Left SEmpty)         -> error "SEmpty should not be present in error"
-          (Left (STail SEmpty)) -> error "SList '[] should not be present in error"
+          (RSuccess (r', s'))      -> return $ Right (r' :** rs, s' :** ss')
       Left e -> return $ Left e
   {-# INLINE initAllModules #-}
 
@@ -348,66 +376,59 @@ effIOSafe = effIOSafeWith id
 
 -- | lift IO action into Eff, catch IOException into a custom error and return as Left
 effIOSafeWith :: (IOException -> e) -> IO a -> Eff mods '[e] a
-effIOSafeWith f io = Eff $ RSE $ \_ s -> do
+effIOSafeWith f io = Eff $ \_ s -> do
   a :: Either IOException a <- E.try io
   case a of
-    Right a' -> return (Right a', s)
-    Left e   -> return (Left $ STail $ SHead $ f e, s)
+    Right a' -> return (RSuccess a', s)
+    Left e   -> return (RFailure $ EHead $ f e, s)
 {-# INLINE effIOSafeWith #-}
 
 effCatchSystem :: Eff mods es a -> (SystemError -> Eff mods es a) -> Eff mods es a
-effCatchSystem eff h = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effCatchSystem eff _h = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- (unEff eff) rs ss
   case eS_E_Es of
-    Right a                 -> return (Right a, stateMods)
-    Left (SHead sysE)       -> runRSE (unEff $ h sysE) rs ss
-    Left (STail e)          -> return (Left $ STail e, stateMods)
-    Left _                  -> error "SEmpty should not be present in error"
+    RSuccess a            -> return (RSuccess a, stateMods)
+    RFailure (e)          -> return (RFailure e, stateMods)
 {-# INLINE effCatchSystem #-}
 
 effCatch :: Eff mods (e : es) a -> (e -> Eff mods es a) -> Eff mods es a
-effCatch eff h = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effCatch eff h = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- (unEff eff) rs ss
   case eS_E_Es of
-    Right a                 -> return (Right a, stateMods)
-    Left (SHead sysE)       -> return (Left $ SHead sysE, stateMods)
-    Left (STail (SHead e))  -> runRSE (unEff $ h e) rs ss
-    Left (STail (STail es)) -> return (Left $ STail es, stateMods)
-    Left _                  -> error "SEmpty should not be present in error"
+    RSuccess a                  -> return (RSuccess a, stateMods)
+    RFailure (EHead e)  -> (unEff $ h e) rs ss
+    RFailure (ETail es) -> return (RFailure $ es, stateMods)
   -- return (_ , stateMods)
 {-# INLINE effCatch #-}
 
-effCatchAll :: Eff mods es a -> (SList es -> Eff mods NoError a) -> Eff mods NoError a
-effCatchAll eff h = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effCatchAll :: Eff mods es a -> (EList es -> Eff mods NoError a) -> Eff mods NoError a
+effCatchAll eff h = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- (unEff eff) rs ss
   case eS_E_Es of
-    Right a           -> return (Right a, stateMods)
-    Left (STail es)   -> runRSE (unEff $ h es) rs ss
-    Left (SHead sysE) -> return (Left $ SHead sysE, stateMods)
-    Left _            -> error "SEmpty should not be present in error"
+    RSuccess a           -> return (RSuccess a, stateMods)
+    RFailure es   -> (unEff $ h es) rs ss
 {-# INLINE effCatchAll #-}
 
-effThrow :: In e (SystemError : es) => e -> Eff mods es a
-effThrow e = Eff $ RSE $ \_ s -> pure (Left $ embedS e, s)
+effThrow :: In e es => e -> Eff mods es a
+effThrow e = Eff $ \_ s -> pure (RFailure $ embedE e, s)
 {-# INLINE effThrow #-}
 
-effThrowSystem :: SystemError -> Eff mods '[] a
+effThrowSystem :: In SystemError es => SystemError -> Eff mods es a
 effThrowSystem = effThrow
 {-# INLINE effThrowSystem #-}
 
-proofSubList :: SList (a : cs) -> SList (a : b : cs)
-proofSubList (SHead x) = SHead x
-proofSubList (STail xs) = STail $ STail xs
-proofSubList SEmpty = SEmpty
-{-# INLINE proofSubList #-}
+-- proofSubList :: EList (a : cs) -> EList (a : b : cs)
+-- proofSubList (EHead x)  = EHead x
+-- proofSubList (ETail xs) = ETail $ ETail xs
+-- {-# INLINE proofSubList #-}
 
 effEitherWith :: (e -> e') -> Eff mods es (Either e a) -> Eff mods (e' : es) a
-effEitherWith f eff = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effEitherWith f eff = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- unEff eff rs ss
   case eS_E_Es of
-    Right (Right a) -> return (Right a, stateMods)
-    Right (Left e)  -> return (Left $ STail $ SHead $ f e, stateMods)
-    Left sysE       -> return (Left $ proofSubList sysE, stateMods)
+    RSuccess (Right a) -> return (RSuccess a, stateMods)
+    RSuccess (Left e)  -> return (RFailure $ EHead $ f e, stateMods)
+    RFailure sysE      -> return (RFailure $ ETail sysE, stateMods)
 {-# INLINE effEitherWith #-}
 
 effEither :: Eff mods es (Either e a) -> Eff mods (e : es) a
@@ -415,43 +436,43 @@ effEither = effEitherWith id
 {-# INLINE effEither #-}
 
 effMaybeWith :: e -> Eff mods es (Maybe a) -> Eff mods (e : es) a
-effMaybeWith e eff = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effMaybeWith e eff = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- unEff eff rs ss
   case eS_E_Es of
-    Right (Just a) -> return (Right a, stateMods)
-    Right Nothing  -> return (Left $ STail $ SHead e, stateMods)
-    Left sysE      -> return (Left $ proofSubList sysE, stateMods)
+    RSuccess (Just a) -> return (RSuccess a, stateMods)
+    RSuccess Nothing  -> return (RFailure $ EHead e, stateMods)
+    RFailure sysE     -> return (RFailure $ ETail sysE, stateMods)
 {-# INLINE effMaybeWith #-}
 
 effMaybeInWith :: (In e es) => e -> Eff mods es (Maybe a) -> Eff mods es a
-effMaybeInWith e eff = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effMaybeInWith e eff = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- unEff eff rs ss
   case eS_E_Es of
-    Right (Just a) -> return (Right a, stateMods)
-    Right Nothing  -> return (Left $ STail $ embedS e, stateMods)
-    Left sysE       -> return (Left sysE, stateMods)
+    RSuccess (Just a) -> return (RSuccess a, stateMods)
+    RSuccess Nothing  -> return (RFailure $ embedE e, stateMods)
+    RFailure sysE     -> return (RFailure sysE, stateMods)
 {-# INLINE effMaybeInWith #-}
 
-effEitherSystemWith :: (e -> SystemError) -> Eff mods es (Either e a) -> Eff mods es a
-effEitherSystemWith f eff = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effEitherSystemWith :: In SystemError es => (e -> SystemError) -> Eff mods es (Either e a) -> Eff mods es a
+effEitherSystemWith f eff = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- unEff eff rs ss
   case eS_E_Es of
-    Right (Right a) -> return (Right a, stateMods)
-    Right (Left e)  -> return (Left $ SHead $ f e, stateMods)
-    Left sysE       -> return (Left sysE, stateMods)
+    RSuccess (Right a) -> return (RSuccess a, stateMods)
+    RSuccess (Left e)  -> return (RFailure $ embedE $ f e, stateMods)
+    RFailure sysE   -> return (RFailure sysE, stateMods)
 {-# INLINE effEitherSystemWith #-}
 
-effEitherSystemException :: (Exception e) => Eff mods es (Either e a) -> Eff mods es a
+effEitherSystemException :: (In SystemError es, Exception e) => Eff mods es (Either e a) -> Eff mods es a
 effEitherSystemException = effEitherSystemWith (SystemErrorException . toException)
 {-# INLINE effEitherSystemException #-}
 
 effEitherInWith :: (In e' es) => (e -> e') -> Eff mods es (Either e a) -> Eff mods es a
-effEitherInWith f eff = Eff $ RSE $ \rs ss -> do
-  (eS_E_Es, stateMods) <- runRSE (unEff eff) rs ss
+effEitherInWith f eff = Eff $ \rs ss -> do
+  (eS_E_Es, stateMods) <- unEff eff rs ss
   case eS_E_Es of
-    Right (Right a) -> return (Right a, stateMods)
-    Right (Left e)  -> return (Left $ STail $ embedS $ f e, stateMods)
-    Left sysE       -> return (Left sysE, stateMods)
+    RSuccess (Right a) -> return (RSuccess a, stateMods)
+    RSuccess (Left e)  -> return (RFailure $ embedE $ f e, stateMods)
+    RFailure sysE      -> return (RFailure sysE, stateMods)
 {-# INLINE effEitherInWith #-}
 
 effEitherIn :: (In e es) => Eff mods es (Either e a) -> Eff mods es a

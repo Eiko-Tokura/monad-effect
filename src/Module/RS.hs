@@ -34,7 +34,7 @@ embedStateT action = do
 
 addStateT :: forall s mods errs a.
   ( mods `SubList` (SModule s : mods)
-  , errs `SubList` (SystemError : errs)
+  , errs `SubList` errs
   , NotIn SystemError errs
   , (SModule s) `NotIn` mods
   )

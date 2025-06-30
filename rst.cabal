@@ -58,6 +58,8 @@ library
     -- Import common warning flags.
     import:           warnings
 
+    ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively
+
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.RST
                     , Control.Monad.Effect
@@ -97,6 +99,8 @@ test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
+    ghc-options: -O2 -ddump-simpl -ddump-to-file
+
     -- Base language which the package is written in.
     default-language: GHC2021
 
@@ -119,3 +123,5 @@ test-suite rst-test
     build-depends:
         base >= 4 && < 5
       , rst
+      , criterion
+      , mtl
