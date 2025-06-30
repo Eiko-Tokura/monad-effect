@@ -236,6 +236,7 @@ getSub (SS e t) xs = getE e xs :* getSub t xs
 class UniqueIn e ts => In e (ts :: [Type]) where
   getH :: HList ts -> e                               -- ^ Get the element from the HList.
   getF :: FList f ts -> f e                           -- ^ Get the element from the FList.
+  getEMaybe :: EList ts -> Maybe e                    -- ^ Get the element from the EList, if it exists.
   modifyH :: (e -> e) -> HList ts -> HList ts         -- ^ Modify the element in the HList.
   modifyF :: (f e -> f e) -> FList f ts -> FList f ts -- ^ Modify the element in the FList.
   embedU :: f e -> UList f ts                         -- ^ Embed the element into a UList.
@@ -258,6 +259,9 @@ instance NotIn e ts => In e (e : ts) where
   {-# INLINE getH #-}
   getF = getEF EZ
   {-# INLINE getF #-}
+  getEMaybe (EHead x) = Just x
+  getEMaybe (ETail _) = Nothing
+  {-# INLINE getEMaybe #-}
   modifyH f (x :* xs) = f x :* xs
   {-# INLINE modifyH #-}
   modifyF g (x :** xs) = g x :** xs
@@ -275,6 +279,9 @@ instance {-# OVERLAPPABLE #-} (UniqueIn e (t : ts), In e ts) => In e (t : ts) wh
   {-# INLINE getH #-}
   getF (_ :** xs) = getF xs
   {-# INLINE getF #-}
+  getEMaybe (EHead _)  = Nothing -- according to the constraint, we can prove that e /~ t
+  getEMaybe (ETail xs) = getEMaybe xs
+  {-# INLINE getEMaybe #-}
   modifyH f (x :* xs) = x :* modifyH f xs
   {-# INLINE modifyH #-}
   modifyF g (x :** xs) = x :** modifyF g xs
