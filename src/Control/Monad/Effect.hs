@@ -3,7 +3,8 @@ module Control.Monad.Effect
   ( -- * Effectful computation
     Eff
   , embedEff, embedMods, embedError
-  , runEff, runEffWithInitData, runEffNoError, runEff0
+  , runEff, runEff_, runEff0, runEff01, runEff00
+  , runEffWithInitData, runEffNoError
   , runEffOuter, runEffOuter_
   , effCatch, effCatchAll, effCatchSystem
   , effThrow, effThrowSystem
@@ -137,6 +138,14 @@ runEff :: forall mods es a
 runEff rs ss eff = unEff eff rs ss
 {-# INLINE runEff #-}
 
+runEff_ :: forall mods es a
+  .  SystemRead mods
+  -> SystemState mods
+  -> Eff mods es a
+  -> IO (Result es a)
+runEff_ rs ss eff = fst <$> runEff rs ss eff
+{-# INLINE runEff_ #-}
+
 -- | If error happens at initialization, it will return Left SystemError
 -- If error happens during event loop, it will return Right (Left (SList (SystemError : es)))
 runEffWithInitData :: forall mods es a. System mods
@@ -148,9 +157,9 @@ runEffWithInitData :: forall mods es a. System mods
         , SystemState mods)
       )
 runEffWithInitData initData eff = do
-  initAllModules @mods initData >>= \case
-    Right (rs, ss) -> Right <$> runEff rs ss eff
-    Left e         -> return $ Left e
+  runEff0 (initAllModules @mods initData) >>= \case
+    RSuccess (rs, ss)  -> Right <$> runEff rs ss eff
+    RFailure (EHead e) -> return $ Left e
 
 runEffNoError :: forall mods a
   .  SystemRead mods
@@ -160,9 +169,16 @@ runEffNoError :: forall mods a
 runEffNoError rs ss eff = first resultNoError <$> unEff eff rs ss
 {-# INLINE runEffNoError #-}
 
-runEff0 :: Eff '[] '[] a -> IO a
-runEff0 = fmap fst . runEffNoError FNil FNil
+runEff0 :: Eff '[] es a -> IO (Result es a)
+runEff0 = fmap fst . runEff FNil FNil
 {-# INLINE runEff0 #-}
+
+runEff01 :: Eff '[] '[e] a -> IO (Either e a)
+runEff01 = fmap (first fromElistSingleton . resultToEither) . runEff0
+
+runEff00 :: Eff '[] NoError a -> IO a
+runEff00 = fmap resultNoError . runEff0
+{-# INLINE runEff00 #-}
 
 -- | Warning: state will lose when you have an error
 runEffOuter :: forall mod mods es a. ModuleRead mod -> ModuleState mod -> Eff (mod : mods) es a -> Eff mods es (ModuleState mod, a)
@@ -225,7 +241,7 @@ modifyModule f = modify @(SystemState mods) (modifyF f)
 -- in practice we could use
 -- instance SomeModuleWeNeed `In` mods => Loadable mods SomeModuleToLoad
 class Loadable mod mods where
-  initModule  :: ModuleInitData mod -> Eff mods NoError (ModuleRead mod, ModuleState mod)
+  initModule  :: ModuleInitData mod -> Eff mods '[SystemError] (ModuleRead mod, ModuleState mod)
 
   beforeEvent :: Eff (mod : mods) NoError ()
   beforeEvent = return ()
@@ -250,12 +266,12 @@ class Loadable mod mods where
 data family ModuleInitDataHardCode mod :: Type
 
 class Loadable mod mods => LoadableEnv mod mods where
-  readInitDataFromEnv :: ModuleInitDataHardCode mod -> Eff '[] '[] (ModuleInitData mod)
+  readInitDataFromEnv :: ModuleInitDataHardCode mod -> Eff '[] '[SystemError] (ModuleInitData mod)
   -- ^ Read module init data from environment, or other means
   -- one can change this to SystemInitData mods -> IO (ModuleInitData mod)
 
 class Loadable mod mods => LoadableArgs mod mods where
-  readInitDataFromArgs :: ModuleInitDataHardCode mod -> [String] -> Eff '[] '[] (ModuleInitData mod)
+  readInitDataFromArgs :: ModuleInitDataHardCode mod -> [String] -> Eff '[] '[SystemError] (ModuleInitData mod)
   -- ^ Read module init data from command line arguments, or using comand line arguments to read other things
   -- one can change this to SystemInitData mods -> [String] -> IO (ModuleInitData mod)
 
@@ -265,7 +281,7 @@ class Loadable mod mods => LoadableArgs mod mods where
 -- the last module in the list is the first to be loaded
 -- and also the first to execute beforeEvent and afterEvent
 class System mods where
-  initAllModules :: SystemInitData mods -> IO (Either SystemError (SystemRead mods, SystemState mods))
+  initAllModules :: SystemInitData mods -> Eff '[] '[SystemError] (SystemRead mods, SystemState mods)
 
   listenToEvents :: Eff mods '[] (STM (SystemEvent mods))
 
@@ -281,14 +297,14 @@ class System mods where
   -- i.e. the head of the list is the first to be released
 
 class System mods => SystemEnv mods where
-  readSystemInitDataFromEnv :: SystemInitDataHardCode mods -> Eff '[] '[] (SystemInitData mods)
+  readSystemInitDataFromEnv :: SystemInitDataHardCode mods -> Eff '[] '[SystemError] (SystemInitData mods)
 
 class System mods => SystemArgs mods where
-  readSystemInitDataFromArgs :: SystemInitDataHardCode mods -> [String] -> Eff '[] '[] (SystemInitData mods)
+  readSystemInitDataFromArgs :: SystemInitDataHardCode mods -> [String] -> Eff '[] '[SystemError] (SystemInitData mods)
 
 -- | base case for system
 instance System '[] where
-  initAllModules _ = return $ Right (FNil, FNil)
+  initAllModules _ = return (FNil, FNil)
   {-# INLINE initAllModules #-}
 
   listenToEvents = return empty
@@ -318,12 +334,11 @@ instance SystemArgs '[] where
 -- | Inductive instance for system
 instance (SubList mods (mod:mods), Module mod, System mods, Loadable mod mods) => System (mod ': mods) where
   initAllModules (x :** xs) = do
-    initAllModules xs >>= \case
-      Right (rs, ss) -> do
-        (er, ss') <- (unEff @mods $ initModule @mod x) rs ss
-        case er of
-          (RSuccess (r', s'))      -> return $ Right (r' :** rs, s' :** ss')
-      Left e -> return $ Left e
+    (rs, ss)  <- initAllModules xs -- >>= _
+    (er, ss') <- liftIO $ runEff rs ss $ initModule @mod x
+    case er of
+      RSuccess (r', s') -> return (r' :** rs, s' :** ss')
+      RFailure (EHead e) -> effThrowSystem e
   {-# INLINE initAllModules #-}
 
   beforeSystem = do

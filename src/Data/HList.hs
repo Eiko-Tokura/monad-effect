@@ -46,8 +46,8 @@ resultMapErrors :: (EList es -> EList es') -> Result es a -> Result es' a
 resultMapErrors _ (RSuccess a) = RSuccess a
 resultMapErrors f (RFailure es) = RFailure (f es)
 
-elistSingleton :: EList '[s] -> s
-elistSingleton (EHead x) = x
+fromElistSingleton :: EList '[s] -> s
+fromElistSingleton (EHead x) = x
 
 instance Functor (Result es) where
   fmap f (RSuccess a)  = RSuccess (f a)
