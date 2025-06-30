@@ -232,8 +232,8 @@ getSub :: Sub ys xs -> HList xs -> HList ys
 getSub SZ _        = Nil
 getSub (SS e t) xs = getE e xs :* getSub t xs
 
--- | A class carrying the proof of the existence of an element in a list.
-class UniqueIn e ts => In e (ts :: [Type]) where
+-- | A class carrying the proof of the existence of an element in a list. UniqueIn e ts => 
+class In e (ts :: [Type]) where
   getH :: HList ts -> e                               -- ^ Get the element from the HList.
   getF :: FList f ts -> f e                           -- ^ Get the element from the FList.
   getEMaybe :: EList ts -> Maybe e                    -- ^ Get the element from the EList, if it exists.
@@ -253,8 +253,25 @@ type family UniqueIn (e :: Type) (ts :: [Type]) :: Constraint where
   UniqueIn e (e ': ts) = NotIn e ts
   UniqueIn e (t ': ts) = UniqueIn e ts
 
--- | Base case for the In class.
-instance NotIn e ts => In e (e : ts) where
+data Sing t = Sing
+
+data SingList (ts :: [Type]) where
+  SNil  :: SingList '[]
+  SCons :: Sing t -> SingList ts -> SingList (t : ts)
+
+class ListSing (ts :: [Type]) where
+  singList :: SingList ts
+
+instance ListSing '[] where
+  singList = SNil
+  {-# INLINE singList #-}
+
+instance ListSing ts => ListSing (t : ts) where
+  singList = SCons Sing singList
+  {-# INLINE singList #-}
+
+-- | Base case for the In class. NotIn e ts => 
+instance In e (e : ts) where
   getH h = h !: EZ
   {-# INLINE getH #-}
   getF = getEF EZ
@@ -273,8 +290,8 @@ instance NotIn e ts => In e (e : ts) where
   embedE = EHead
   {-# INLINE embedE #-}
 
--- | Inductive case for the In class.
-instance {-# OVERLAPPABLE #-} (UniqueIn e (t : ts), In e ts) => In e (t : ts) where
+-- | Inductive case for the In class. UniqueIn e (t : ts), 
+instance {-# OVERLAPPABLE #-} (In e ts) => In e (t : ts) where
   getH (_ :* xs) = getH xs
   {-# INLINE getH #-}
   getF (_ :** xs) = getF xs
@@ -293,10 +310,112 @@ instance {-# OVERLAPPABLE #-} (UniqueIn e (t : ts), In e ts) => In e (t : ts) wh
   embedE x = ETail $ embedE x
   {-# INLINE embedE #-}
 
+-- proofSubListXsXs :: SingList xs -> ProofSubList xs xs
+-- proofSubListXsXs SNil = PSubNil
+-- proofSubListXsXs (SCons t ts) = PSubAdd EZ _
+-- {-# INLINE proofSubListXsXs #-}
+
+proofGetH :: Elem e ts -> HList ts -> e
+proofGetH EZ    (x :* _)  = x
+proofGetH (ES n) (_ :* xs) = proofGetH n xs
+{-# INLINE proofGetH #-}
+
+proofGetF :: Elem e ts -> FList f ts -> f e
+proofGetF EZ    (x :** _)  = x
+proofGetF (ES n) (_ :** xs) = proofGetF n xs
+{-# INLINE proofGetF #-}
+
+proofGetEMaybe :: Elem e ts -> EList ts -> Maybe e
+proofGetEMaybe EZ    (EHead x)   = Just x
+proofGetEMaybe (ES n) (ETail xs) = proofGetEMaybe n xs
+proofGetEMaybe _ _ = Nothing
+{-# INLINE proofGetEMaybe #-}
+
+proofModifyH :: Elem e ts -> (e -> e) -> HList ts -> HList ts
+proofModifyH EZ    f (x :* xs) = f x :* xs
+proofModifyH (ES n) f (y :* xs) = y :* proofModifyH n f xs
+{-# INLINE proofModifyH #-}
+
+proofModifyF :: Elem e ts -> (f e -> f e) -> FList f ts -> FList f ts
+proofModifyF EZ    f (x :** xs) = f x :** xs
+proofModifyF (ES n) f (y :** xs) = y :** proofModifyF n f xs
+{-# INLINE proofModifyF #-}
+
+proofEmbedU :: Elem e ts -> f e -> UList f ts
+proofEmbedU EZ    x = UHead x
+proofEmbedU (ES n) x = UTail $ proofEmbedU n x
+{-# INLINE proofEmbedU #-}
+
+proofEmbedS :: Elem e ts -> e -> SList ts
+proofEmbedS EZ    x = SHead x
+proofEmbedS (ES n) x = STail $ proofEmbedS n x
+{-# INLINE proofEmbedS #-}
+
+proofEmbedE :: Elem e ts -> e -> EList ts
+proofEmbedE EZ    x = EHead x
+proofEmbedE (ES n) x = ETail $ proofEmbedE n x
+{-# INLINE proofEmbedE #-}
+
 -- | Sum of two type-level lists.
 hAdd :: HList as -> HList bs -> HList (as ++ bs)
 hAdd Nil bs = bs
 hAdd (x :* xs) bs = x :* hAdd xs bs
+
+data ProofSubList (ys :: [Type]) (xs :: [Type]) where
+  PSubNil :: ProofSubList '[] xs
+  PSubAdd :: Elem y xs -> ProofSubList ys xs -> ProofSubList (y : ys) xs
+
+proofGetSubList :: ProofSubList ys xs -> HList xs -> HList ys
+proofGetSubList PSubNil _ = Nil
+proofGetSubList (PSubAdd e t) xs = getE e xs :* proofGetSubList t xs
+{-# INLINE proofGetSubList #-}
+
+proofGetSubListF :: ProofSubList ys xs -> FList f xs -> FList f ys
+proofGetSubListF PSubNil _ = FNil
+proofGetSubListF (PSubAdd e t) xs = getEF e xs :** proofGetSubListF t xs
+{-# INLINE proofGetSubListF #-}
+
+proofSubListModify :: ProofSubList ys xs -> (HList ys -> HList ys) -> HList xs -> HList xs
+proofSubListModify PSubNil _ xs = xs
+proofSubListModify p@(PSubAdd e t) f xs =
+    let hy :* hys = f (proofGetSubList p xs)
+    in proofModifyH e (const hy) $ proofSubListUpdate t xs hys
+{-# INLINE proofSubListModify #-}
+
+proofSubListModifyF :: ProofSubList ys xs -> (FList f ys -> FList f ys) -> FList f xs -> FList f xs
+proofSubListModifyF PSubNil _ xs = xs
+proofSubListModifyF p@(PSubAdd e t) f xs =
+    let hy :** hys = f (proofGetSubListF p xs)
+    in proofModifyF e (const hy) $ proofSubListUpdateF t xs hys
+{-# INLINE proofSubListModifyF #-}
+
+proofSubListUpdate :: ProofSubList ys xs -> HList xs -> HList ys -> HList xs
+proofSubListUpdate PSubNil xs _ = xs
+proofSubListUpdate (PSubAdd e t) xs ys =
+    let hy :* hys = ys
+    in proofModifyH e (const hy) $ proofSubListUpdate t xs hys
+{-# INLINE proofSubListUpdate #-}
+
+proofSubListUpdateF :: ProofSubList ys xs -> FList f xs -> FList f ys -> FList f xs
+proofSubListUpdateF PSubNil xs _ = xs
+proofSubListUpdateF (PSubAdd e t) xs ys =
+    let hy :** hys = ys
+    in proofModifyF e (const hy) $ proofSubListUpdateF t xs hys
+{-# INLINE proofSubListUpdateF #-}
+
+proofSubListEmbed :: ProofSubList ys xs -> SList ys -> SList xs
+proofSubListEmbed PSubNil _ = SEmpty
+proofSubListEmbed (PSubAdd _ _) SEmpty = SEmpty
+proofSubListEmbed (PSubAdd e _) (SHead y) = proofEmbedS e y
+proofSubListEmbed (PSubAdd _ t) (STail ys) = proofSubListEmbed t ys
+{-# INLINE proofSubListEmbed #-}
+
+proofSubListErrorEmbed :: ProofSubList ys xs -> Result ys a -> Result xs a
+proofSubListErrorEmbed PSubNil (RSuccess a) = RSuccess a
+proofSubListErrorEmbed (PSubAdd _ _) (RSuccess a) = RSuccess a
+proofSubListErrorEmbed (PSubAdd e _) (RFailure (EHead y)) = RFailure (proofEmbedE e y)
+proofSubListErrorEmbed (PSubAdd _ t) (RFailure (ETail ys)) = proofSubListErrorEmbed t (RFailure ys)
+{-# INLINE proofSubListErrorEmbed #-}
 
 -- | A class for working with sublists.
 class SubList (ys :: [Type]) (xs :: [Type]) where
@@ -372,4 +491,18 @@ instance (In y xs, SubList ys xs) => SubList (y : ys) xs where
   subListErrorEmbed (RSuccess a)          = RSuccess a
   subListErrorEmbed (RFailure (EHead y))  = RFailure (embedE y)
   subListErrorEmbed (RFailure (ETail ys)) = subListErrorEmbed (RFailure ys)
+  {-# INLINE subListErrorEmbed #-}
+
+instance {-# INCOHERENT #-} SubList xs xs where
+  getSubList = id
+  {-# INLINE getSubList #-}
+  getSubListF = id
+  {-# INLINE getSubListF #-}
+  subListModify = id
+  {-# INLINE subListModify #-}
+  subListModifyF = id
+  {-# INLINE subListModifyF #-}
+  subListEmbed = id
+  {-# INLINE subListEmbed #-}
+  subListErrorEmbed = id
   {-# INLINE subListErrorEmbed #-}

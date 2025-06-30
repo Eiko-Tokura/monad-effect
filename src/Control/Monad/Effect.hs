@@ -12,9 +12,12 @@ module Control.Monad.Effect
   , effEitherIn, effEitherInWith
   , effEitherSystemWith, effEitherSystemException
   , effMaybeWith, effMaybeInWith
-  , liftIOSafe, effIOSafe
-  , liftIOSafeAt, effIOSafeAt
+  , liftIOException, effIOException
+  , liftIOAt, effIOAt
   , liftIOSafeWith, effIOSafeWith
+
+  , proofEmbedEff
+  , declareNoError
 
   -- * Module and System
   , Module(..), System(..), Loadable(..)
@@ -96,12 +99,12 @@ instance MonadStateful (SystemState mods) (Eff mods es) where
   {-# INLINE modify #-}
 
 -- | The error in throwM is thrown to the top level as SystemErrorException SomeException
-instance (SubList mods mods, SubList es es, SubList es (SystemError : es), In SystemError es) => MonadThrow (Eff mods es) where
+instance (SubList mods mods, SubList es es, In SystemError es) => MonadThrow (Eff mods es) where
   throwM = embedEff @mods @mods @es @es . effThrowSystem @es . SystemErrorException . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch SystemErrorException SomeException, other errors are algebraic
-instance (SubList mods mods, SubList es es, SubList es (SystemError : es), In SystemError es) => MonadCatch (Eff mods es) where
+instance (SubList mods mods, SubList es es, In SystemError es) => MonadCatch (Eff mods es) where
   catch ma handler = effCatchSystem ma $ \case
     SystemErrorException e -> case fromException e of
       Just e' -> handler e'
@@ -120,12 +123,21 @@ embedEff eff = Eff $ \rs' ss' -> do
   return (subListErrorEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEff #-}
 
-embedMods :: (SubList mods mods', SubList es es, NotIn SystemError es)
+proofEmbedEff :: ProofSubList mods mods' -> ProofSubList es es' -> Eff mods es a -> Eff mods' es' a
+proofEmbedEff pm pe eff = Eff $ \rs' ss' -> do
+  let rs = proofGetSubListF pm rs'
+      ss = proofGetSubListF pm ss'
+      modsEff = unEff eff
+  (emods, ss1) <- modsEff rs ss
+  return (proofSubListErrorEmbed pe emods, proofSubListUpdateF pm ss' ss1)
+{-# INLINE proofEmbedEff #-}
+
+embedMods :: (SubList mods mods', SubList es es)
   => Eff mods es a -> Eff mods' es a
 embedMods = embedEff
 {-# INLINE embedMods #-}
 
-embedError :: (SubList mods mods, SubList es es', NotIn SystemError es')
+embedError :: (SubList mods mods, SubList es es')
   => Eff mods es a -> Eff mods es' a
 embedError = embedEff
 {-# INLINE embedError #-}
@@ -380,23 +392,28 @@ instance (SubList mods (mod:mods), Module mod, SystemArgs mods, Loadable mod mod
     return $ x :** xs
   {-# INLINE readSystemInitDataFromArgs #-}
 
--- | lift IO action into Eff, catch IOException and return as Left, synonym for effIOSafe
-liftIOSafe :: IO a -> Eff mods '[IOException] a
-liftIOSafe = effIOSafe
-{-# INLINE liftIOSafe #-}
+-- | Declare that the computation has no error, i.e. it is safe to run
+declareNoError :: Eff mods es a -> Eff mods NoError a
+declareNoError eff = eff `effCatchAll` \_es -> error "unsafeDeclareNoError: declared NoError, but got errors"
+{-# INLINE declareNoError #-}
 
-liftIOSafeAt :: Exception e => IO a -> Eff mods '[e] a
-liftIOSafeAt = effIOSafeAt
-{-# INLINE liftIOSafeAt #-}
+-- | lift IO action into Eff, catch IOException and return as Left, synonym for effIOSafe
+liftIOException :: IO a -> Eff mods '[IOException] a
+liftIOException = effIOException
+{-# INLINE liftIOException #-}
+
+liftIOAt :: Exception e => IO a -> Eff mods '[e] a
+liftIOAt = effIOAt
+{-# INLINE liftIOAt #-}
 
 -- | lift IO action into Eff, catch IOException and return as Left
-effIOSafe :: IO a -> Eff mods '[IOException] a
-effIOSafe = effIOSafeWith id
-{-# INLINE effIOSafe #-}
+effIOException :: IO a -> Eff mods '[IOException] a
+effIOException = effIOSafeWith id
+{-# INLINE effIOException #-}
 
-effIOSafeAt :: Exception e => IO a -> Eff mods '[e] a
-effIOSafeAt = effIOSafeWith id
-{-# INLINE effIOSafeAt #-}
+effIOAt :: Exception e => IO a -> Eff mods '[e] a
+effIOAt = effIOSafeWith id
+{-# INLINE effIOAt #-}
 
 -- | lift IO action into Eff, catch IOException into a custom error and return as Left
 liftIOSafeWith :: (IOException -> e) -> IO a -> Eff mods '[e] a
