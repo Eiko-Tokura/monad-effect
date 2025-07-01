@@ -80,6 +80,7 @@ library
                     , stm
                     , text
                     , exceptions
+                    , monad-control
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -99,7 +100,7 @@ test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -ddump-simpl -ddump-to-file
+    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all
 
     -- Base language which the package is written in.
     default-language: GHC2021

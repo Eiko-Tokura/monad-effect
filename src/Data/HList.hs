@@ -197,8 +197,8 @@ infixr 5 :*
 
 -- | Get an element from a finite list using an element proof.
 getEF :: Elem e l -> FList f l -> f e
-getEF  EZ    (x :** _)  = x
-getEF (ES n) (_ :** xs) = getEF n xs
+getEF  EZ    = \(x :** _)  -> x
+getEF (ES n) = \(_ :** xs) -> getEF n xs
 {-# INLINE getEF #-}
 
 -- | Proof of the existence of an element in a list.

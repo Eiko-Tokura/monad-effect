@@ -2,7 +2,7 @@ module Module.RS where
 
 import Control.Monad.Effect
 import Data.Kind
-import Data.HList ( In, NotIn, SubList )
+import Data.HList ( In, UniqueIn, NotIn, SubList, Remove, FirstIndex )
 import Data.Bifunctor (first)
 import qualified Control.Monad.State as S
 
@@ -34,8 +34,6 @@ embedStateT action = do
 
 addStateT :: forall s mods errs m a.
   ( mods `SubList` (SModule s : mods)
-  , errs `SubList` errs
-  , NotIn SystemError errs
   , (SModule s) `NotIn` mods
   , Monad m
   )
@@ -46,6 +44,20 @@ addStateT action = do
   putModule (SState s')
   return a
 {-# INLINE addStateT #-}
+
+asStateT :: forall s mods errs m a.
+  ( SModule s `In` mods
+  , SModule s `UniqueIn` mods
+  , SubList (Remove (FirstIndex (SModule s) mods) mods) mods
+  , Monad m
+  )
+  => S.StateT s (EffT (Remove (FirstIndex (SModule s) mods) mods) errs m) a -> EffT mods errs m a
+asStateT action = do
+  SState s <- getModule
+  (a, s') <- embedEffT $ S.runStateT action s
+  putModule (SState s')
+  return a
+{-# INLINE asStateT #-}
 
 runRModule :: Monad m => r -> EffT (RModule r : mods) errs m a -> EffT mods errs m a
 runRModule r = runEffTOuter_ RRead (RState r)

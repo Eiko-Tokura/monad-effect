@@ -57,6 +57,7 @@ import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.RST
 import Control.Monad.Catch
+import Control.Monad.Trans.Control
 import Control.Exception as E hiding (TypeError)
 
 -- | EffTectful computation, using modules as units of effect
@@ -127,6 +128,20 @@ instance Monad m => MonadStateful (SystemState mods) (EffT mods es m) where
   modify f = EffT $ \_ ss -> return (RSuccess (), f ss)
   {-# INLINE modify #-}
 
+instance MonadTrans (EffT mods es) where
+  lift ma = EffT $ \_ ss -> do
+    a <- ma
+    return (RSuccess a, ss)
+  {-# INLINE lift #-}
+
+instance MonadTransControl (EffT mods es) where
+  type StT (EffT mods es) a = (Result es a, SystemState mods)
+  liftWith f = EffT $ \rs ss -> fmap (\a -> (RSuccess a, ss)) $ f $ runEffT rs ss
+  {-# INLINE liftWith #-}
+
+  restoreT mRes = EffT $ \_ _ -> mRes
+  {-# INLINE restoreT #-}
+
 -- | The error in throwM is thrown to the top level as SystemErrorException SomeException
 instance (Monad m, SubList mods mods, SubList es es, In SystemError es) => MonadThrow (EffT mods es m) where
   throwM = embedEffT @mods @mods @_ @es @es . effThrowSystem @es . SystemErrorException . toException
@@ -177,10 +192,6 @@ embedError = embedEffT
 runEffT :: forall mods es m a. Monad m => SystemRead mods -> SystemState mods -> EffT mods es m a -> m (Result es a, SystemState mods)
 runEffT rs ss eff = unEffT eff rs ss
 {-# INLINE runEffT #-}
-
--- runEffT :: forall mods es a. SystemRead mods -> SystemState mods -> EffT mods es a -> IO (Result es a, SystemState mods)
--- runEffT rs ss effT = runEffT rs ss effT
--- {-# INLINE runEffT #-}
 
 runEffT_ :: forall mods es m a
   .  Monad m
