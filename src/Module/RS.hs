@@ -24,7 +24,7 @@ instance Module (SModule s) where
   newtype ModuleState (SModule s)    = SState { sState :: s }
   data    ModuleEvent (SModule s)    = SEvent
 
-embedStateT :: forall s mods errs a. ((SModule s) `In` mods) => S.StateT s (Eff mods errs) a -> Eff mods errs a
+embedStateT :: forall s mods errs m a. (Monad m, (SModule s) `In` mods) => S.StateT s (EffT mods errs m) a -> EffT mods errs m a
 embedStateT action = do
   SState s <- getModule @(SModule s)
   (a, s') <- S.runStateT action s
@@ -32,47 +32,49 @@ embedStateT action = do
   return a
 {-# INLINE embedStateT #-}
 
-addStateT :: forall s mods errs a.
+addStateT :: forall s mods errs m a.
   ( mods `SubList` (SModule s : mods)
   , errs `SubList` errs
   , NotIn SystemError errs
   , (SModule s) `NotIn` mods
+  , Monad m
   )
-  => S.StateT s (Eff mods errs) a -> Eff (SModule s : mods) errs a
+  => S.StateT s (EffT mods errs m) a -> EffT (SModule s : mods) errs m a
 addStateT action = do
   SState s <- getModule @(SModule s)
-  (a, s') <- embedEff $ S.runStateT action s
+  (a, s') <- embedEffT $ S.runStateT action s
   putModule (SState s')
   return a
 {-# INLINE addStateT #-}
 
-runRModule :: r -> Eff (RModule r : mods) errs a -> Eff mods errs a
-runRModule r = runEffOuter_ RRead (RState r)
+runRModule :: Monad m => r -> EffT (RModule r : mods) errs m a -> EffT mods errs m a
+runRModule r = runEffTOuter_ RRead (RState r)
 {-# INLINE runRModule #-}
 
 -- | Warning: state will lose when you have an error
-runSModule :: s -> Eff (SModule s : mods) errs a -> Eff mods errs (s, a)
+runSModule :: Monad m => s -> EffT (SModule s : mods) errs m a -> EffT mods errs m (s, a)
 runSModule s
   = fmap (first $ \(SState s') -> s')
-  . runEffOuter SRead (SState s)
+  . runEffTOuter SRead (SState s)
+{-# INLINE runSModule #-}
 
-runSModule_ :: s -> Eff (SModule s : mods) errs a -> Eff mods errs a
-runSModule_ s = runEffOuter_ SRead (SState s)
+runSModule_ :: Monad m => s -> EffT (SModule s : mods) errs m a -> EffT mods errs m a
+runSModule_ s = runEffTOuter_ SRead (SState s)
 {-# INLINE runSModule_ #-}
 
-askR :: forall r mods errs. ((RModule r) `In` mods) => Eff mods errs r
+askR :: forall r mods errs m. Monad m => ((RModule r) `In` mods) => EffT mods errs m r
 askR = do
   RState r <- getModule @(RModule r)
   return r
 {-# INLINE askR #-}
 
-asksR :: forall r mods errs a. ((RModule r) `In` mods) => (r -> a) -> Eff mods errs a
+asksR :: forall r mods errs m a. Monad m => ((RModule r) `In` mods) => (r -> a) -> EffT mods errs m a
 asksR f = do
   RState r <- getModule @(RModule r)
   return (f r)
 {-# INLINE asksR #-}
 
-localR :: forall r mods errs a. ((RModule r) `In` mods) => (r -> r) -> Eff mods errs a -> Eff mods errs a
+localR :: forall r mods errs m a. (Monad m, (RModule r) `In` mods) => (r -> r) -> EffT mods errs m a -> EffT mods errs m a
 localR f action = do
   RState r <- getModule @(RModule r)
   let r' = f r
@@ -82,25 +84,25 @@ localR f action = do
   return result
 {-# INLINE localR #-}
 
-getS :: forall s mods errs. ((SModule s) `In` mods) => Eff mods errs s
+getS :: forall s mods errs m. (Monad m, (SModule s) `In` mods) => EffT mods errs m s
 getS = do
   SState s <- getModule @(SModule s)
   return s
 {-# INLINE getS #-}
 
-getsS :: forall s mods errs a. ((SModule s) `In` mods) => (s -> a) -> Eff mods errs a
+getsS :: forall s mods errs m a. (Monad m, (SModule s) `In` mods) => (s -> a) -> EffT mods errs m a
 getsS f = do
   SState s <- getModule @(SModule s)
   return (f s)
 {-# INLINE getsS #-}
 
-putS :: forall s mods errs. ((SModule s) `In` mods) => s -> Eff mods errs ()
+putS :: forall s mods errs m. (Monad m, (SModule s) `In` mods) => s -> EffT mods errs m ()
 putS s = do
   SState _ <- getModule @(SModule s)
   putModule @(SModule s) (SState s)
 {-# INLINE putS #-}
 
-modifyS :: forall s mods errs. ((SModule s) `In` mods) => (s -> s) -> Eff mods errs ()
+modifyS :: forall s mods errs m. (Monad m, (SModule s) `In` mods) => (s -> s) -> EffT mods errs m ()
 modifyS f = do
   s <- getS
   putS (f s)

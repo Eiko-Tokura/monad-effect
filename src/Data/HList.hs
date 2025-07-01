@@ -388,7 +388,7 @@ instance In e (e : ts) where
   {-# INLINE embedE #-}
 
 type family NotEq (a :: Type) (b :: Type) :: Constraint where
-  NotEq a a = TypeError ('Text "Type " ':<>: 'ShowType a ':<>: 'Text " is not allowed to be equal to itself")
+  NotEq a a = TypeError ('Text "Type " ':<>: 'ShowType a ':<>: 'Text " duplicated")
   NotEq a b = ()
 
 -- | Treated as an axiom

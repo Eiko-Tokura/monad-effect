@@ -12,13 +12,13 @@ eventLoop = do
 
 -- | Avoid runtime error (IO) though, make sure every loop breaking error is in SystemError
 eventLoopWithRelease :: forall mods . (System mods) => Eff mods NoError ()
-eventLoopWithRelease = Eff $ \rs ss -> do
-  (e, ss') <- unEff @mods eventLoop rs ss
-  _ <- runEff rs ss' $ releaseSystem @mods
+eventLoopWithRelease = EffT $ \rs ss -> do
+  (e, ss') <- unEffT @mods eventLoop rs ss
+  _ <- runEffT rs ss' $ releaseSystem @mods
   return (e, ss')
 
 -- | When restart, the state is reset to the initial state
 eventLoopWithReleaseRestartIO :: forall mods . (System mods) => SystemInitData mods -> IO () -- Eff mods NoError ()
 eventLoopWithReleaseRestartIO initData = do
-  _ <- runEffWithInitData @mods initData eventLoopWithRelease
+  _ <- runEffTWithInitData @mods initData eventLoopWithRelease
   eventLoopWithReleaseRestartIO initData
