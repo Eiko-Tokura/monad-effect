@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableSuperClasses, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
+{-# LANGUAGE UndecidableSuperClasses, AllowAmbiguousTypes, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 -- | This module provides utilities for working with type-level lists in Haskell.
 -- It defines various types and functions to manipulate type-level lists, including
@@ -8,15 +8,29 @@ module Data.HList where
 import Data.Kind
 import Data.Proxy
 import Data.Default
+import Data.Type.Equality ((:~:)(..))
 import GHC.TypeError
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | A type-level list applied to a type-level function, representing a product.
--- It has a strict head and a lazy tail.
+-- It has a strict head and tail.
 -- the ! bang pattern here is to make it strict because it might cause trouble when putting in a stateful monad. Alternatively we can also write a strict version FList, SFList.
 data FList (f :: Type -> Type) (ts :: [Type]) where
   FNil  :: FList f '[]
   (:**) :: !(f t) -> !(FList f ts) -> FList f (t : ts)
 infixr 5 :**
+
+-- We may try something like this in the future, use Template Haskell to generate all the instances for FData
+--
+-- this will enable fast access and update, improving performance
+--
+-- data FData (f :: Type -> Type) (ts :: [Type]) where
+--   FData0 :: FData f '[]
+--   FData1 :: { fdata1_0 :: !(f t) } -> FData f '[t]
+--   FData2 :: { fdata2_0 :: !(f t1), fdata2_1 :: !(f t2) } -> FData f '[t1, t2]
+--   FData3 :: { fdata3_0 :: !(f t1), fdata3_1 :: !(f t2), fdata3_2 :: !(f t3) } -> FData f '[t1, t2, t3]
+--   FData4 :: { fdata4_0 :: !(f t1), fdata4_1 :: !(f t2), fdata4_2 :: !(f t3), fdata4_3 :: !(f t4) } -> FData f '[t1, t2, t3, t4]
+--   FData5 :: { fdata5_0 :: !(f t1), fdata5_1 :: !(f t2), fdata5_2 :: !(f t3), fdata5_3 :: !(f t4), fdata5_4 :: !(f t5) } -> FData f '[t1, t2, t3, t4, t5]
 
 -- | A type-level list representing a simple sum of types.
 data SList (ts :: [Type]) where
@@ -231,9 +245,14 @@ data Sub (ys :: [Type]) (xs :: [Type]) where
 getSub :: Sub ys xs -> HList xs -> HList ys
 getSub SZ _        = Nil
 getSub (SS e t) xs = getE e xs :* getSub t xs
+{-# INLINE getSub #-}
 
 -- | A class carrying the proof of the existence of an element in a list. UniqueIn e ts => 
 class In e (ts :: [Type]) where
+  singIndex :: SNat (FirstIndex e ts)
+  singFirstIndex :: SFirstIndex e ts
+  proofIndex :: AtIndex ts (FirstIndex e ts) :~: e
+  elemIndex :: Elem e ts
   getH :: HList ts -> e                               -- ^ Get the element from the HList.
   getF :: FList f ts -> f e                           -- ^ Get the element from the FList.
   getEMaybe :: EList ts -> Maybe e                    -- ^ Get the element from the EList, if it exists.
@@ -242,6 +261,27 @@ class In e (ts :: [Type]) where
   embedU :: f e -> UList f ts                         -- ^ Embed the element into a UList.
   embedS :: e -> SList ts                             -- ^ Embed the element into a SList.
   embedE :: e -> EList ts                             -- ^ Embed the element into an EList.
+
+data Nat where
+  Zero :: Nat
+  Succ :: Nat -> Nat
+
+data SNat (n :: Nat) where
+  SZero :: SNat 'Zero
+  SSucc :: SNat n -> SNat ('Succ n)
+
+-- | Calculate the first index
+type family FirstIndex (e :: Type) (ts :: [Type]) :: Nat where
+  FirstIndex e (e ': ts) = 'Zero
+  FirstIndex e (t ': ts) = 'Succ (FirstIndex e ts)
+  FirstIndex e '[] = TypeError ('Text "Error evaluating Index: Type " ':<>: 'ShowType e ':<>: 'Text " is not in the list")
+
+data SFirstIndex (e :: Type) (ts :: [Type]) where
+  SFirstIndexZero :: SFirstIndex e (e ': ts) -- ^ Base case: the element is the head of the list.
+  SFirstIndexSucc
+    :: (FirstIndex e (t ': ts) :~: Succ (FirstIndex e ts)) -- ^ Takes a proof that the first index of e in (t ': ts) is one more than in ts.
+    -> (SFirstIndex e ts)
+    -> SFirstIndex e (t ': ts) -- ^ Inductive case: the element is in the tail of the list.
 
 type family NotIn (e :: Type) (ts :: [Type]) :: Constraint where
   NotIn e '[] = ()
@@ -252,6 +292,55 @@ type family UniqueIn (e :: Type) (ts :: [Type]) :: Constraint where
   UniqueIn e '[] = ()
   UniqueIn e (e ': ts) = NotIn e ts
   UniqueIn e (t ': ts) = UniqueIn e ts
+
+type family UniqueList (ts :: [Type]) :: Constraint where
+  UniqueList '[] = ()
+  UniqueList (t ': ts) = (NotIn t ts, UniqueList ts)
+
+type family Remove (e :: Nat) (ts :: [Type]) :: [Type] where
+  Remove e '[]              = '[]
+  Remove Zero     (t ': ts) = ts
+  Remove (Succ n) (t ': ts) = t : Remove n ts
+
+type family AtIndex (ts :: [Type]) (n :: Nat) :: Type where
+  AtIndex (t ': ts) 'Zero = t
+  AtIndex (t ': ts) ('Succ n) = AtIndex ts n
+  AtIndex '[] _ = TypeError ('Text "AtIndex: Index out of bounds")
+
+removeElemS :: SFirstIndex e ts -> FList f ts -> FList f (Remove (FirstIndex e ts) ts)
+removeElemS SFirstIndexZero     (_ :** xs) = xs
+removeElemS (SFirstIndexSucc Refl n) (x :** xs) = x :** removeElemS n xs
+{-# INLINE removeElemS #-}
+
+unRemoveElemS :: SFirstIndex e ts -> f e -> FList f (Remove (FirstIndex e ts) ts) -> FList f ts
+unRemoveElemS SFirstIndexZero x xs = x :** xs
+unRemoveElemS (SFirstIndexSucc Refl n) x (y :** ys) = y :** unRemoveElemS n x ys
+{-# INLINE unRemoveElemS #-}
+
+removeElem :: SNat n -> FList f ts -> FList f (Remove n ts)
+removeElem _ FNil               = FNil
+removeElem SZero     (_ :** xs) = xs
+removeElem (SSucc n) (x :** xs) = x :** removeElem n xs
+{-# INLINE removeElem #-}
+
+getRemoveElemE :: SNat n -> Result es a -> Either (AtIndex es n) (Result (Remove n es) a)
+getRemoveElemE _         (RSuccess a)          = Right (RSuccess a)
+getRemoveElemE SZero     (RFailure (EHead e))  = Left e
+getRemoveElemE SZero     (RFailure (ETail es)) = Right (RFailure es)
+getRemoveElemE (SSucc _) (RFailure (EHead e))  = Right $ RFailure $ EHead e
+getRemoveElemE (SSucc n) (RFailure (ETail es)) =
+  case getRemoveElemE n (RFailure es) of
+    Left  e              -> Left e
+    Right (RFailure es') -> Right (RFailure $ ETail es')
+    Right (RSuccess a)   -> Right (RSuccess a)
+{-# INLINE getRemoveElemE #-}
+
+-- | Note: this function builds on a proof that relies on a coercion,
+-- it relies on the fact that the instance generation is done in the correct order.
+-- if you change the order of instance generation, it will break.
+getRemoveIn :: forall e ts f. (e `In` ts) => FList f ts -> (f e, FList f (Remove (FirstIndex e ts) ts))
+getRemoveIn xs = (getF xs, removeElem (singIndex @e @ts) xs)
+{-# INLINE getRemoveIn #-}
 
 data Sing t = Sing
 
@@ -272,6 +361,14 @@ instance ListSing ts => ListSing (t : ts) where
 
 -- | Base case for the In class. NotIn e ts => 
 instance In e (e : ts) where
+  singIndex = SZero
+  {-# INLINE singIndex #-}
+  singFirstIndex = SFirstIndexZero
+  {-# INLINE singFirstIndex #-}
+  proofIndex = Refl
+  {-# INLINE proofIndex #-}
+  elemIndex = EZ
+  {-# INLINE elemIndex #-}
   getH h = h !: EZ
   {-# INLINE getH #-}
   getF = getEF EZ
@@ -290,8 +387,29 @@ instance In e (e : ts) where
   embedE = EHead
   {-# INLINE embedE #-}
 
+type family NotEq (a :: Type) (b :: Type) :: Constraint where
+  NotEq a a = TypeError ('Text "Type " ':<>: 'ShowType a ':<>: 'Text " is not allowed to be equal to itself")
+  NotEq a b = ()
+
+-- | Treated as an axiom
+firstIndexTraverseNotEqElem :: forall e t ts. (NotEq e t, In e ts) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+firstIndexTraverseNotEqElem = case unsafeCoerce Refl :: FirstIndex e (t : ts) :~: Succ (FirstIndex e ts) of
+  Refl -> Refl
+{-# INLINE firstIndexTraverseNotEqElem #-}
+
 -- | Inductive case for the In class. UniqueIn e (t : ts), 
-instance {-# OVERLAPPABLE #-} (In e ts) => In e (t : ts) where
+instance {-# OVERLAPPABLE #-} (NotEq e t, In e ts) => In e (t : ts) where
+  singIndex = case firstIndexTraverseNotEqElem @e @t @ts of
+    Refl -> SSucc (singIndex @e @ts)
+  {-# INLINE singIndex #-}
+  singFirstIndex = case firstIndexTraverseNotEqElem @e @t @ts of
+    Refl -> SFirstIndexSucc Refl (singFirstIndex @e @ts)
+  {-# INLINE singFirstIndex #-}
+  proofIndex = case firstIndexTraverseNotEqElem @e @t @ts of
+    Refl -> case proofIndex @e @ts of Refl -> Refl
+  {-# INLINE proofIndex #-}
+  elemIndex = ES elemIndex
+  {-# INLINE elemIndex #-}
   getH (_ :* xs) = getH xs
   {-# INLINE getH #-}
   getF (_ :** xs) = getF xs
