@@ -11,10 +11,12 @@ import Data.Default
 import Data.Type.Equality ((:~:)(..))
 import GHC.TypeError
 import Unsafe.Coerce (unsafeCoerce)
+import Fusion.Plugin.Types (Fuse(..))
 
 -- | A type-level list applied to a type-level function, representing a product.
 -- It has a strict head and tail.
 -- the ! bang pattern here is to make it strict because it might cause trouble when putting in a stateful monad. Alternatively we can also write a strict version FList, SFList.
+{-# ANN type FList Fuse #-}
 data FList (f :: Type -> Type) (ts :: [Type]) where
   FNil  :: FList f '[]
   (:**) :: !(f t) -> !(FList f ts) -> FList f (t : ts)

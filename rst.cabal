@@ -58,13 +58,15 @@ library
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively
+    ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -ddump-splices
 
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.RST
                     , Control.Monad.Effect
                     , Control.Monad.Effect.EventLoop
                     , Data.HList
+                    , Data.FData
+                    , Data.FData.TH
                     , Module.RS
 
     -- Modules included in this library but not exported.
@@ -81,6 +83,8 @@ library
                     , text
                     , exceptions
                     , monad-control
+                    , fusion-plugin-types
+                    , template-haskell
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -96,11 +100,13 @@ library
                       , LambdaCase
                       , TypeFamilies
                       , TypeApplications
+                      , TemplateHaskell
 test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all
+    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -fspecialise-aggressively
+    -- -fplugin=Fusion.Plugin
 
     -- Base language which the package is written in.
     default-language: GHC2021
@@ -126,3 +132,4 @@ test-suite rst-test
       , rst
       , criterion
       , mtl
+      , fusion-plugin

@@ -27,6 +27,7 @@ module Control.Monad.Effect
   -- * Module and System
   , Module(..), System(..), Loadable(..)
   , queryModule, queriesModule
+  , localModule
   , getModule, getsModule
   , putModule, modifyModule
 
@@ -294,6 +295,12 @@ queryModule = queries @(SystemRead mods) (getF @mod)
 queriesModule :: forall mod mods es m a. (Monad m, In mod mods, Module mod) => (ModuleRead mod -> a) -> EffT mods es m a
 queriesModule f = f <$> queryModule @mod
 {-# INLINE queriesModule #-}
+
+localModule :: forall mod mods es m a. (Monad m, In mod mods, Module mod) => (ModuleRead mod -> ModuleRead mod) -> EffT mods es m a -> EffT mods es m a
+localModule f eff = EffT $ \rs ss -> do
+  let rs' = modifyF @mod f rs
+  unEffT eff rs' ss
+{-# INLINE localModule #-}
 
 getModule :: forall mod mods es m. (Monad m, In mod mods, Module mod) => EffT mods es m (ModuleState mod)
 getModule = gets @(SystemState mods) (getF @mod)
