@@ -1,12 +1,13 @@
-{-# LANGUAGE DataKinds #-}
+{-# OPTIONS_GHC -fconstraint-solver-iterations=100 #-}
+{-# LANGUAGE DataKinds, GADTs, PartialTypeSignatures #-}
 module Main (main) where
 
 import Control.Monad.Effect
 -- import Control.Monad
 import Criterion.Main
-import Data.HList
-import Data.Functor.Identity
-import Data.FData
+import Data.TypeList
+import Data.Test
+import Data.TypeList.FData
 import Module.RS
 import qualified Control.Monad.State as S
 
@@ -19,13 +20,25 @@ import qualified Control.Monad.State as S
 -- But of course, in a very very tight loop, you should avoid using Eff, use a single layer of StateT or
 -- embed your computation as pure functions.
 
-testEffState :: Eff '[SModule Int] NoError ()
-testEffState = getS @Int >>= \x ->
+testEffStateFPoly :: _ => EffT flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
+testEffStateFPoly = do
+  x <- getS @Int
+  modifyS not
   if x < 1_000_000
-    then putS (x + 1) >> testEffState
+    then putS (x + 1) >> testEffStateFPoly
     else return ()
 
-testEffStateAs :: Eff '[SModule Int] NoError ()
+testMtlState :: S.StateT ((), Int, Bool) IO ()
+testMtlState = do
+  x <- S.gets (\(_, x, _) -> x)
+  S.modify (\(_, x', b) -> ((), x', not b))
+  if x < 1_000_000
+    then do
+      S.modify (\(_, _, b) -> ((), x + 1, b))
+      testMtlState
+    else return ()
+
+testEffStateAs :: EffL '[SModule Int] NoError ()
 testEffStateAs = asStateT @Int $ S.mapStateT liftIO loop
   where loop = do
           x <- S.get
@@ -35,129 +48,72 @@ testEffStateAs = asStateT @Int $ S.mapStateT liftIO loop
               loop
             else return ()
 
-testPureState :: Pure '[SModule (Box Int)] NoError ()
-testPureState = do
-  x <- getsS (unBox @Int)
-  if x < 1_000_000
-    then do
-      putS $ Box (x + 1)
-      testPureState
-    else return ()
-
-data Box a = Box { unBox :: !a }
-
-newtype TestEff c s a = TestEff
-  { runTestEff
-    :: c ModuleRead  '[SModule s]
-    -> c ModuleState '[SModule s]
-    -> (a, c ModuleState '[SModule s])
-  }
-instance Functor (TestEff c s) where
-  fmap f (TestEff g) = TestEff $ \r s -> let (a, s') = g r s in (f a, s')
-  {-# INLINE fmap #-}
-instance Applicative (TestEff c s) where
-  pure a = TestEff $ \_ s -> (a, s)
-  {-# INLINE pure #-}
-  TestEff f <*> TestEff g = TestEff $ \r s -> let (f', s') = f r s; (a, s'') = g r s' in (f' a, s'')
-  {-# INLINE (<*>) #-}
-instance Monad (TestEff c s) where
-  TestEff f >>= g = TestEff $ \r s -> let (a, s') = f r s; TestEff h = g a in h r s'
-  {-# INLINE (>>=) #-}
-
-testTestEff :: TestEff FList Int ()
-testTestEff = do
-  SState s <- fmap (getEF EZ) $ TestEff $ \_ s -> (s, s)
-  if s < 1_000_000
-    then do
-      TestEff $ \_ _ -> ((), SState (s + 1) :** FNil)
-      testTestEff
-    else return ()
-
-testTestEffFData :: TestEff FData Int ()
-testTestEffFData = do
-  SState s <- fmap getFData $ TestEff $ \_ s -> (s, s)
-  if s < (1_000_000 :: Int)
-    then do
-      TestEff $ \_ fd -> ((), modifyFData (\_ -> SState $ s + 1) fd)
-      testTestEffFData
-    else return ()
-
-testMtlState :: S.StateT Int IO ()
-testMtlState = do
-  x <- S.get
-  if x < 1_000_000
-    then do
-      S.put (x + 1)
-      testMtlState
-    else return ()
-
-testMtlStateBox :: S.StateT (Box Int) IO ()
-testMtlStateBox = do
-  Box x <- S.get
-  if x < 1_000_000
-    then do
-      S.put $ Box (x + 1)
-      testMtlStateBox
-    else return ()
-
-testStateTEff :: S.StateT Int (Pure '[] NoError) ()
-testStateTEff = do
-  x <- S.get
-  if x < 1_000_000
-    then do
-      S.put (x + 1)
-      testStateTEff
-    else return ()
-
 main :: IO ()
-main = defaultMain $ 
-  [ bgroup "State Effect"
-    [ bench "Eff" $ whnfIO $ runEffTNoError
+main = do
+  print $ findMe 0
+
+  putStrLn "Some sanity checks"
+  
+  let testFList :: FList Maybe '[Int]
+      testFList = Just 1 :** FNil
+
+      unConsHead = fst . unConsF $ testFList
+
+  print $ unConsHead
+
+  print $ getIn @_ @Int testFList
+
+
+  _ <- runEffTNoError
         (SRead :** FNil)
-        (SState 0 :** FNil)
-        testEffState
-    ]
-  , bgroup "State Effect As StateT"
-    [ bench "Eff" $ whnfIO $ runEffTNoError
-        (SRead :** FNil)
-        (SState 0 :** FNil)
-        testEffStateAs
-    ]
-  , bgroup "Pure State Effect"
-    [ bench "PureEff" $ whnf (\x -> (\(SState (Box s)) -> s) . getEF EZ . snd . runIdentity $ runEffTNoError
-        (SRead :** FNil)
-        (SState x :** FNil)
-        testPureState
-      ) (Box 0)
-    ]
-  , bgroup "TestEff"
-    [ bench "TestEff" $ whnf (\x -> (\(SState s) -> s) . getEF EZ . snd $ runTestEff
-        testTestEff
-        (SRead :** FNil)
-        (SState x :** FNil)
-      ) 0
-    ]
-  , bgroup "TestEffFData"
-    [ bench "FData" $ whnf (\x -> (\(SState s) -> s) . getFDataByIndex SZero . snd $ runTestEff
-        testTestEffFData
-        (FData1 SRead)
-        (FData1 $ SState x)
-      ) (0 :: Int)
-    ]
-  , bgroup "Mtl State"
-    [ bench "StateT" $ whnfIO $ S.runStateT testMtlState 0
-    ]
-  , bgroup "Mtl State Box"
-    [ bench "StateT" $ whnfIO $ S.runStateT testMtlStateBox (Box 0)
-    ]
-  , bgroup "StateT in Eff"
-    [ bench "StateTEff" $ whnf (\x -> (\(SState s) -> s) . getEF EZ . snd . runIdentity $
-          runEffTNoError
+        (SState (0 :: Int) :** FNil)
+        ( do
+            liftIO $ putStrLn "Running initial state test"
+            x <- getS @Int
+            liftIO $ putStrLn $ "Initial state get: " ++ show x
+            putS (x + 1)
+            liftIO $ putStrLn "State updated"
+            y <- getS @Int
+            liftIO $ putStrLn $ "State after update: " ++ show y
+            if y == x + 1
+              then liftIO $ putStrLn "State updated correctly"
+              else liftIO $ putStrLn "State not updated incorrectly"
+        )
+
+  defaultMain $ 
+    [ bgroup "Bind"
+      [ bench "bind" $ whnfIO $ runEffTNoError
           (SRead :** FNil)
-          (SState x :** FNil)
-        $ addStateT testStateTEff) 0
+          (SState (0 :: Int) :** FNil)
+          ( do
+              x <- getS @Int
+              putS (x + 1)
+              y <- getS @Int
+              if y == x + 1
+                then return ()
+                else liftIO $ putStrLn "State not updated incorrectly"
+          )
+      ]
+    , bgroup "State Effect Eff"
+      [ bench "FList" $ whnfIO $ runEffTNoError
+          (RRead `FCons` SRead `FCons` SRead `FCons` FNil)
+          (RState () `FCons` SState 0 `FCons` SState False `FCons` FNil)
+          testEffStateFPoly
+      , bench "FData" $ whnfIO $ runEffTNoError
+          (FData3 RRead SRead SRead)
+          (FData3 (RState ()) (SState 0) (SState False))
+          testEffStateFPoly
+      ]
+    , bgroup "Mtl State"
+      [ bench "StateT" $ whnfIO $ S.runStateT testMtlState ((), 0, False)
+      ]
+    , bgroup "Embed tight computation in Eff"
+      [ bench "EmbedEff" $ whnfIO $ runEffTNoError FNil FNil $ liftIO $ S.runStateT testMtlState ((), 0, False)
+      ]
+    , bgroup "State Effect As StateT"
+      [ bench "Eff" $ whnfIO $ runEffTNoError
+          (SRead :** FNil)
+          (SState 0 :** FNil)
+          testEffStateAs
+      ]
     ]
-  , bgroup "Embed tight computation in Eff"
-    [ bench "EmbedEff" $ whnfIO $ runEffTNoError FNil FNil $ liftIO $ S.runStateT testMtlState 0
-    ]
-  ]

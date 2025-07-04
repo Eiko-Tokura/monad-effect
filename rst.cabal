@@ -58,16 +58,20 @@ library
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -ddump-splices
-
+    ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -flate-dmd-anal
     -- Modules exported by the library.
-    exposed-modules:  Control.Monad.RST
-                    , Control.Monad.Effect
+    exposed-modules:  Control.Monad.Effect
                     , Control.Monad.Effect.EventLoop
-                    , Data.HList
-                    , Data.FData
-                    , Data.FData.TH
+                    , Data.Result
+                    , Data.TypeList
+                    , Data.TypeList.ConsFData
+                    , Data.TypeList.FData
+                    , Data.TypeList.FData.TH
+                    , Data.TypeList.FList
+                    , Data.TypeList.UList
+                    , Data.TypeList.Families
                     , Module.RS
+                    , Control.Monad.RST
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -105,8 +109,7 @@ test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -fspecialise-aggressively
-    -- -fplugin=Fusion.Plugin
+    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -fspecialise-aggressively -flate-dmd-anal
 
     -- Base language which the package is written in.
     default-language: GHC2021

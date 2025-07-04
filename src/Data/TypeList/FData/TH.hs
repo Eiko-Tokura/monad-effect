@@ -1,9 +1,31 @@
-module Data.FData.TH where
+{-# LANGUAGE AllowAmbiguousTypes #-}
+module Data.TypeList.FData.TH where
 
-import Data.HList (Nat(..))
+import Data.TypeList.Families (Nat(..), SNat(..))
 import Language.Haskell.TH.Syntax hiding (Type)
 import qualified Language.Haskell.TH.Syntax as TH
 import Control.Monad (when)
+
+class QClass (n :: Nat) where
+  someQ :: Q Exp
+
+instance QClass 'Zero where
+  someQ = [| 0 |]
+
+instance QClass n => QClass ('Succ n) where
+  someQ = [| (+1) . $(someQ @n) |]
+
+experiment :: forall (n :: Nat). SNat n -> (Exp -> Q Exp) -> (forall (k :: Nat). Exp -> SNat k -> Q Exp) -> Exp -> Q Exp
+experiment SZero eZero _eSucc z     = eZero z
+experiment (SSucc n) eZero eSucc z  = do
+  expS <- eSucc z n
+  experiment n eZero eSucc expS
+
+experimentFunc :: SNat n -> Q Exp
+experimentFunc n = experiment n
+  (\e -> pure e)
+  (\e (_ :: SNat k) -> [| (+1) . $(pure e) |])
+  (VarE 'id)
 
 generateFDataInstance :: Int -> Q Dec
 generateFDataInstance n = do
