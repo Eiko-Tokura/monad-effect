@@ -151,12 +151,12 @@ instance MonadTransControl (EffT c mods es) where
   {-# INLINE restoreT #-}
 
 -- | The error in throwM is thrown to the top level as SystemErrorException SomeException
-instance (Monad m, ConsFData c, SubList c mods mods, SubList c es es, In SystemError es) => MonadThrow (EffT c mods es m) where
+instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In SystemError es) => MonadThrow (EffT c mods es m) where
   throwM = embedEffT @mods @mods @_ @_ @es @es . effThrowSystem @es . SystemErrorException . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch SystemErrorException SomeException, other errors are algebraic
-instance (Monad m, ConsFData c, SubList c mods mods, SubList c es es, In' c SystemError es) => MonadCatch (EffT c mods es m) where
+instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In' c SystemError es) => MonadCatch (EffT c mods es m) where
   catch ma handler = effCatchSystem ma $ \case
     SystemErrorException e -> case fromException e of
       Just e' -> handler e'
@@ -189,11 +189,11 @@ embedEffT eff = EffT $ \rs' ss' -> do
 --   return (proofSubListErrorEmbed pe emods, proofSubListUpdateF pm ss' ss1)
 -- {-# INLINE proofEmbedEffT #-}
 
-embedMods :: (Monad m, ConsFData c, SubList c mods mods', SubListEmbed es es) => EffT c mods es m a -> EffT c mods' es m a
+embedMods :: forall mods mods' c es m a. (Monad m, ConsFDataList c mods', SubList c mods mods', SubListEmbed es es) => EffT c mods es m a -> EffT c mods' es m a
 embedMods = embedEffT
 {-# INLINE embedMods #-}
 
-embedError :: (Monad m, ConsFData c, SubList c mods mods, SubListEmbed es es') => EffT c mods es m a -> EffT c mods es' m a
+embedError :: forall es es' c mods m a. (Monad m, SubList c mods mods, SubListEmbed es es') => EffT c mods es m a -> EffT c mods es' m a
 embedError = embedEffT
 {-# INLINE embedError #-}
 
@@ -270,7 +270,7 @@ runEffTIn mread mstate eff = EffT $ \modsRead modsState -> do
     RFailure es -> pure (RFailure es, removeElem (singFirstIndex @mod @mods) ss')
 {-# INLINE runEffTIn #-}
 
-runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, ConsFData c, In' c mod mods)
+runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
   => ModuleRead mod -> ModuleState mod -> EffT c mods es m a
   -> EffT c (Remove (FirstIndex mod mods) mods) es m a
 runEffTIn_ mread mstate eff = fst <$> runEffTIn @mod @mods mread mstate eff
@@ -385,10 +385,10 @@ class System mods where
   -- i.e. the head of the list is the first to be released
 
 class System mods => SystemEnv mods where
-  readSystemInitDataFromEnv :: ConsFData c => SystemInitDataHardCode c mods -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
+  readSystemInitDataFromEnv :: ConsFDataList c mods => SystemInitDataHardCode c mods -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
 
 class System mods => SystemArgs mods where
-  readSystemInitDataFromArgs :: ConsFData c => SystemInitDataHardCode c mods -> [String] -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
+  readSystemInitDataFromArgs :: ConsFDataList c mods => SystemInitDataHardCode c mods -> [String] -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
 
 -- | base case for system
 instance System '[] where
@@ -455,17 +455,17 @@ instance (Module mod, System mods, Loadable mod mods) => System (mod ': mods) wh
   {-# INLINE releaseSystem #-}
 
 instance (SubList c mods (mod:mods), Module mod, SystemEnv mods, Loadable mod mods, LoadableEnv mod mods) => SystemEnv (mod ': mods) where
-  readSystemInitDataFromEnv (im :** ims) = do
+  readSystemInitDataFromEnv (im :*** ims) = do
     xs <- readSystemInitDataFromEnv @mods ims
     x  <- readInitDataFromEnv @mod @mods im
-    return $ x :** xs
+    return $ x :*** xs
   {-# INLINE readSystemInitDataFromEnv #-}
 
 instance (SubList c mods (mod:mods), Module mod, SystemArgs mods, Loadable mod mods, LoadableArgs mod mods) => SystemArgs (mod ': mods) where
-  readSystemInitDataFromArgs (im :** ims) args = do
+  readSystemInitDataFromArgs (im :*** ims) args = do
     xs <- readSystemInitDataFromArgs @mods ims args
     x  <- readInitDataFromArgs @mod @mods im args
-    return $ x :** xs
+    return $ x :*** xs
   {-# INLINE readSystemInitDataFromArgs #-}
 
 -- | Declare that the computation has no error, i.e. it is safe to run

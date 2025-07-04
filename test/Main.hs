@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fconstraint-solver-iterations=100 #-}
+{-# OPTIONS_GHC -fconstraint-solver-iterations=100 -Wno-partial-type-signatures #-}
 {-# LANGUAGE DataKinds, GADTs, PartialTypeSignatures #-}
 module Main (main) where
 
@@ -6,7 +6,6 @@ import Control.Monad.Effect
 -- import Control.Monad
 import Criterion.Main
 import Data.TypeList
-import Data.Test
 import Data.TypeList.FData
 import Module.RS
 import qualified Control.Monad.State as S
@@ -48,10 +47,20 @@ testEffStateAs = asStateT @Int $ S.mapStateT liftIO loop
               loop
             else return ()
 
+testEffEmbed :: _ => EffT flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
+testEffEmbed = do
+  x <- embedMods @'[SModule Int] $ do
+    x <- getS @Int
+    putS (x + 1)
+    return x
+  if x < 1_000_000
+    then do
+      modifyS not
+      testEffEmbed
+    else return ()
+
 main :: IO ()
 main = do
-  print $ findMe 0
-
   putStrLn "Some sanity checks"
   
   let testFList :: FList Maybe '[Int]
@@ -62,7 +71,6 @@ main = do
   print $ unConsHead
 
   print $ getIn @_ @Int testFList
-
 
   _ <- runEffTNoError
         (SRead :** FNil)
@@ -103,6 +111,16 @@ main = do
           (FData3 RRead SRead SRead)
           (FData3 (RState ()) (SState 0) (SState False))
           testEffStateFPoly
+      ]
+    , bgroup "Embed Eff functionality"
+      [ bench "FList" $ whnfIO $ runEffTNoError
+          (RRead `FCons` SRead `FCons` SRead `FCons` FNil)
+          (RState () `FCons` SState 0 `FCons` SState False `FCons` FNil)
+          testEffEmbed
+      , bench "FData" $ whnfIO $ runEffTNoError
+          (FData3 RRead SRead SRead)
+          (FData3 (RState ()) (SState 0) (SState False))
+          testEffEmbed
       ]
     , bgroup "Mtl State"
       [ bench "StateT" $ whnfIO $ S.runStateT testMtlState ((), 0, False)
