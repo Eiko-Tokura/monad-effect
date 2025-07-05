@@ -1,54 +1,32 @@
 {-# LANGUAGE AllowAmbiguousTypes, ViewPatterns #-}
+-- | This module provides Template Haskell utilities for generating instances of FData, including
+-- FDataByIndex, UnConsFData, ConsFData0, ConsFData1, and RemoveElem.
+--
+-- This module is internal
 module Data.TypeList.FData.TH where
 
-import Data.TypeList.Families (Nat(..), SNat(..))
+import Data.TypeList.Families (Nat(..))
 import Language.Haskell.TH.Syntax hiding (Type)
 import qualified Language.Haskell.TH.Syntax as TH
 import Control.Monad (when)
 
-class QClass (n :: Nat) where
-  someQ :: Q Exp
-
-instance QClass 'Zero where
-  someQ = [| 0 |]
-
-instance QClass n => QClass ('Succ n) where
-  someQ = [| (+1) . $(someQ @n) |]
-
-experiment :: forall (n :: Nat). SNat n -> (Exp -> Q Exp) -> (forall (k :: Nat). Exp -> SNat k -> Q Exp) -> Exp -> Q Exp
-experiment SZero eZero _eSucc z     = eZero z
-experiment (SSucc n) eZero eSucc z  = do
-  expS <- eSucc z n
-  experiment n eZero eSucc expS
-
-experimentFunc :: SNat n -> Q Exp
-experimentFunc n = experiment n
-  (\e -> pure e)
-  (\e (_ :: SNat k) -> [| (+1) . $(pure e) |])
-  (VarE 'id)
-
 generateFDataInstance :: Int -> Q Dec
 generateFDataInstance n = do
   Just fdataName <- lookupTypeName "FData"
-  -- Names for the parameters
   let fName  = mkName "f"
       tNames = [mkName ("t" ++ show i) | i <- [1 .. n]]
 
       fVar   = VarT fName
       tVars  = map VarT tNames
 
-      -- Type-level list '[t1, …, tn]
       listTy = foldr (\t acc -> AppT (AppT PromotedConsT t) acc)
                      PromotedNilT
                      tVars
 
-      -- Head of the instance:  FData f '[…]
       instHead = AppT (AppT (ConT fdataName) fVar) listTy
 
-      -- Constructor name, e.g. FData3
       conName = mkName ("FData" ++ show n)
 
-      -- Helper for individual record fields
       mkField :: Int -> TH.Type -> (Name, Bang, TH.Type)
       mkField idx t =
         ( mkName ("fdata" ++ show n ++ "_" ++ show idx)
@@ -72,13 +50,13 @@ generateFDataInstance n = do
 generateFDataInstances :: [Int] -> Q [Dec]
 generateFDataInstances = mapM generateFDataInstance
 
-zeroName, succName :: Name
-zeroName = 'Zero
-succName = 'Succ
-
 --------------------------------------------------------------------------------
 -- helpers ---------------------------------------------------------------------
 --------------------------------------------------------------------------------
+
+zeroName, succName :: Name
+zeroName = 'Zero
+succName = 'Succ
 
 fDataCon :: Int -> Name
 fDataCon n = mkName $ "FData" ++ show n
@@ -105,13 +83,13 @@ mkGetPats len idx var =
 mkModPats :: Int -> [Name] -> [Pat]
 mkModPats len vars = [ VarP (vars !! i) | i <- [0 .. len-1] ]
 
-inlinePragma :: Name -> Pragma
-inlinePragma f = InlineP f Inline FunLike AllPhases
+inline :: Name -> Pragma
+inline f = InlineP f Inline FunLike AllPhases
 
 --------------------------------------------------------------------------------
 -- | @generateFDataByIndexInstance idx len@
 --   produces
---   > instance FDataByIndex (Nat idx) '[x1 … xlen] where …
+--   > instance FDataByIndex (Nat idx) '[x1 .. xlen]
 generateFDataByIndexInstance :: Int -> Int -> Q Dec
 generateFDataByIndexInstance idx len = do
   when (idx < 0 || idx >= len) $
@@ -179,8 +157,8 @@ generateFDataByIndexInstance idx len = do
           instHead
           [ FunD fGetFDataByIndex    [getClause]
           , FunD fModifyFDataByIndex [modifyClause]
-          , PragmaD (InlineP fGetFDataByIndex Inline FunLike AllPhases)
-          , PragmaD (InlineP fModifyFDataByIndex Inline FunLike AllPhases)
+          , PragmaD $ inline fGetFDataByIndex
+          , PragmaD $ inline fModifyFDataByIndex
           ]
 
 generateFDataByIndexInstances :: [(Int, Int)] -> Q [Dec]
@@ -209,7 +187,7 @@ generateUnconsFDataInstance n = do
         )
         []
       ]
-    , PragmaD (InlineP fUnConsFData Inline FunLike AllPhases)
+    , PragmaD $ inline fUnConsFData
     ]
     
 generateUnconsFDataInstances :: [Int] -> Q [Dec]
@@ -237,7 +215,7 @@ generateConsFData0Instance n = do
         (NormalB $ foldl' AppE (ConE fDataNConName) (VarE xName : fmap VarE xNames))
         []
       ]
-    , PragmaD (InlineP fConsFData0 Inline FunLike AllPhases)
+    , PragmaD $ inline fConsFData0
     ]
 
 generateConsFData0Instances :: [Int] -> Q [Dec]
@@ -265,7 +243,7 @@ generateConsFData1Instance n = do
         (NormalB $ foldl' AppE (ConE fDataN'ConName) (VarE xName : fmap VarE xNames))
         []
       ]
-    , PragmaD (InlineP fConsFData1 Inline FunLike AllPhases)
+    , PragmaD $ inline fConsFData1
     ]
 
 generateConsFData1Instances :: [Int] -> Q [Dec]
@@ -327,8 +305,8 @@ generateRemoveElemInstance n = do
   pure $ InstanceD Nothing [] instHead
           [ FunD fRemoveElem    clausesRemove
           , FunD fUnRemoveElem  clausesUnRem
-          , PragmaD $ inlinePragma fRemoveElem
-          , PragmaD $ inlinePragma fUnRemoveElem
+          , PragmaD $ inline fRemoveElem
+          , PragmaD $ inline fUnRemoveElem
           ]
     where
       sFirstIndexPat :: Int -> Pat

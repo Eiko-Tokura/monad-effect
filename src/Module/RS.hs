@@ -1,3 +1,6 @@
+-- | This module defines two modules (unit of effect) that provides reader and state functionality.
+--
+-- it can be used in the EffT monad transformer
 module Module.RS where
 
 import Control.Monad.Effect
@@ -12,8 +15,8 @@ data RModule (r :: Type)
 
 instance Module (RModule r) where
   newtype ModuleInitData (RModule r) = RInitData { rInitRead :: r }
-  data    ModuleRead  (RModule r)    = RRead
-  newtype ModuleState (RModule r)    = RState { rState :: r }
+  newtype ModuleRead  (RModule r)    = RRead { rRead :: r }
+  data    ModuleState (RModule r)    = RState
   data    ModuleEvent (RModule r)    = REvent
 
 -- | A reader module that has a name
@@ -21,8 +24,8 @@ data RNamed (name :: Symbol) (r :: Type)
 
 instance Module (RNamed name r) where
   newtype ModuleInitData (RNamed name r) = RNamedInitData { rNamedInitRead :: r }
-  data    ModuleRead  (RNamed name r)    = RNamedRead
-  newtype ModuleState (RNamed name r)    = RNamedState { rNamedState :: r }
+  newtype ModuleRead  (RNamed name r)    = RNamedRead { rNamedRead :: r }
+  data    ModuleState (RNamed name r)    = RNamedState
   data    ModuleEvent (RNamed name r)    = RNamedEvent
 
 -- | A module that provides state functionality
@@ -68,7 +71,7 @@ asStateT :: forall s mods errs m c a.
   ( In' c (SModule s) mods
   , SModule s `UniqueIn` mods
   , SubList c (Remove (FirstIndex (SModule s) mods) mods) mods
-  , ConsFData c
+  , ConsFDataList c mods
   , Monad m
   )
   => S.StateT s (EffT c (Remove (FirstIndex (SModule s) mods) mods) errs m) a -> EffT c mods errs m a
@@ -80,11 +83,11 @@ asStateT action = do
 {-# INLINE asStateT #-}
 
 runRModule :: (ConsFDataList c (RModule r : mods), Monad m) => r -> EffT c (RModule r : mods) errs m a -> EffT c mods errs m a
-runRModule r = runEffTOuter_ RRead (RState r)
+runRModule r = runEffTOuter_ (RRead r) RState
 {-# INLINE runRModule #-}
 
 runRModuleIn :: (ConsFDataList c mods, RemoveElem c mods, Monad m, In' c (RModule r) mods) => r -> EffT c mods es m a -> EffT c (Remove (FirstIndex (RModule r) mods) mods) es m a
-runRModuleIn r = runEffTIn_ RRead (RState r)
+runRModuleIn r = runEffTIn_ (RRead r) RState
 {-# INLINE runRModuleIn #-}
 
 -- | Warning: state will lose when you have an error
@@ -106,24 +109,18 @@ runSModule_ s = runEffTOuter_ SRead (SState s)
 
 askR :: forall r mods errs m c. (ConsFDataList c mods, Monad m) => (In' c (RModule r) mods) => EffT c mods errs m r
 askR = do
-  RState r <- getModule @(RModule r)
+  RRead r <- askModule @(RModule r)
   return r
 {-# INLINE askR #-}
 
 asksR :: forall r mods errs m c a. (ConsFDataList c mods, Monad m) => (In' c (RModule r) mods) => (r -> a) -> EffT c mods errs m a
 asksR f = do
-  RState r <- getModule @(RModule r)
+  RRead r <- askModule @(RModule r)
   return (f r)
 {-# INLINE asksR #-}
 
 localR :: forall r mods errs m c a. (Monad m, ConsFDataList c mods, In' c (RModule r) mods) => (r -> r) -> EffT c mods errs m a -> EffT c mods errs m a
-localR f action = do
-  RState r <- getModule @(RModule r)
-  let r' = f r
-  putModule @(RModule r) (RState r')
-  result <- action
-  putModule @(RModule r) (RState r)
-  return result
+localR f action = localModule (\(RRead r) -> RRead (f r)) $ action
 {-# INLINE localR #-}
 
 getS :: forall s mods errs m c. (Monad m, ConsFDataList c mods, In' c (SModule s) mods) => EffT c mods errs m s

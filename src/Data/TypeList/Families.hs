@@ -1,11 +1,12 @@
 {-# LANGUAGE UndecidableSuperClasses, PatternSynonyms, ViewPatterns, AllowAmbiguousTypes, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
+-- | This module provides the fundational types and type families
 module Data.TypeList.Families where
 
 import Data.Kind (Type, Constraint)
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
 import GHC.TypeError
-import Unsafe.Coerce
+import Unsafe.Coerce (unsafeCoerce)
 
 data Nat where
   Zero :: Nat

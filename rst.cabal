@@ -110,7 +110,7 @@ test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -flate-dmd-anal
+    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -O2 -flate-dmd-anal
 
     -- Base language which the package is written in.
     default-language: GHC2021

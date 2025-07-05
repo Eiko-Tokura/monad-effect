@@ -3,7 +3,6 @@
 module Main (main) where
 
 import Control.Monad.Effect
--- import Control.Monad
 import Criterion.Main
 import Data.TypeList
 import Data.TypeList.FData
@@ -37,7 +36,7 @@ testMtlState = do
       testMtlState
     else return ()
 
-testEffStateAs :: EffL '[SModule Int] NoError ()
+testEffStateAs :: Eff '[SModule Int] NoError ()
 testEffStateAs = asStateT @Int $ S.mapStateT liftIO loop
   where loop = do
           x <- S.get
@@ -85,7 +84,7 @@ main = do
             liftIO $ putStrLn $ "State after update: " ++ show y
             if y == x + 1
               then liftIO $ putStrLn "State updated correctly"
-              else liftIO $ putStrLn "State not updated incorrectly"
+              else liftIO $ putStrLn "State updated incorrectly"
         )
 
   defaultMain $ 
@@ -99,27 +98,27 @@ main = do
               y <- getS @Int
               if y == x + 1
                 then return ()
-                else liftIO $ putStrLn "State not updated incorrectly"
+                else liftIO $ putStrLn "State updated incorrectly"
           )
       ]
     , bgroup "State Effect Eff"
       [ bench "FList" $ whnfIO $ runEffTNoError
-          (RRead `FCons` SRead `FCons` SRead `FCons` FNil)
-          (RState () `FCons` SState 0 `FCons` SState False `FCons` FNil)
+          (RRead () `FCons` SRead `FCons` SRead `FCons` FNil)
+          (RState `FCons` SState 0 `FCons` SState False `FCons` FNil)
           testEffStateFPoly
       , bench "FData" $ whnfIO $ runEffTNoError
-          (FData3 RRead SRead SRead)
-          (FData3 (RState ()) (SState 0) (SState False))
+          (FData3 (RRead ()) SRead SRead)
+          (FData3 (RState) (SState 0) (SState False))
           testEffStateFPoly
       ]
     , bgroup "Embed Eff functionality"
       [ bench "FList" $ whnfIO $ runEffTNoError
-          (RRead `FCons` SRead `FCons` SRead `FCons` FNil)
-          (RState () `FCons` SState 0 `FCons` SState False `FCons` FNil)
+          (RRead () `FCons` SRead `FCons` SRead `FCons` FNil)
+          (RState `FCons` SState 0 `FCons` SState False `FCons` FNil)
           testEffEmbed
       , bench "FData" $ whnfIO $ runEffTNoError
-          (FData3 RRead SRead SRead)
-          (FData3 (RState ()) (SState 0) (SState False))
+          (FData3 (RRead ()) SRead SRead)
+          (FData3 (RState) (SState 0) (SState False))
           testEffEmbed
       ]
     , bgroup "Mtl State"
@@ -130,8 +129,8 @@ main = do
       ]
     , bgroup "State Effect As StateT"
       [ bench "Eff" $ whnfIO $ runEffTNoError
-          (SRead :** FNil)
-          (SState 0 :** FNil)
+          (FData1 SRead)
+          (FData1 $ SState 0)
           testEffStateAs
       ]
     ]

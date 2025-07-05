@@ -1,4 +1,4 @@
-{-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
+{-# LANGUAGE DerivingVia, AllowAmbiguousTypes #-}
 -- | The module you should import to use for effectful computation
 module Control.Monad.Effect
   ( -- * EffTectful computation
