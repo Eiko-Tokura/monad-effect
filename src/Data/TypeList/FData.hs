@@ -35,32 +35,32 @@ class FDataByIndex (n :: Nat) (ts :: [Type]) where
 
 $(generateFDataInstances [1..16])
 
-instance RemoveElem FData '[x1] where
-  removeElem SFirstIndexZero (FData1 _x1) = FData0
-  {-# INLINE removeElem #-}
-
-  unRemoveElem SFirstIndexZero x (FData0) = FData1 x
-  {-# INLINE unRemoveElem #-}
-
-instance RemoveElem FData '[x1, x2] where
-  removeElem SFirstIndexZero (FData2 _x1 x2)                        = FData1 x2
-  removeElem (SFirstIndexSucc Refl SFirstIndexZero) (FData2 x1 _x2) = FData1 x1
-  {-# INLINE removeElem #-}
-
-  unRemoveElem SFirstIndexZero x (FData1 x2)                        = FData2 x x2
-  unRemoveElem (SFirstIndexSucc Refl SFirstIndexZero) x (FData1 x1) = FData2 x1 x
-  {-# INLINE unRemoveElem #-}
-
-instance RemoveElem FData '[x1, x2, x3] where
-  removeElem SFirstIndexZero (FData3 _x1 x2 x3)                                               = FData2 x2 x3
-  removeElem (SFirstIndexSucc Refl SFirstIndexZero) (FData3 x1 _x2 x3)                        = FData2 x1 x3
-  removeElem (SFirstIndexSucc Refl (SFirstIndexSucc Refl SFirstIndexZero)) (FData3 x1 x2 _x3) = FData2 x1 x2
-  {-# INLINE removeElem #-}
-
-  unRemoveElem SFirstIndexZero x (FData2 x2 x3)                                               = FData3 x x2 x3
-  unRemoveElem (SFirstIndexSucc Refl SFirstIndexZero) x (FData2 x1 x3)                        = FData3 x1 x x3
-  unRemoveElem (SFirstIndexSucc Refl (SFirstIndexSucc Refl SFirstIndexZero)) x (FData2 x1 x2) = FData3 x1 x2 x
-  {-# INLINE unRemoveElem #-}
+-- instance RemoveElem FData '[x1] where
+--   removeElem SFirstIndexZero (FData1 _x1) = FData0
+--   {-# INLINE removeElem #-}
+-- 
+--   unRemoveElem SFirstIndexZero x (FData0) = FData1 x
+--   {-# INLINE unRemoveElem #-}
+-- 
+-- instance RemoveElem FData '[x1, x2] where
+--   removeElem SFirstIndexZero (FData2 _x1 x2)                        = FData1 x2
+--   removeElem (SFirstIndexSucc Refl SFirstIndexZero) (FData2 x1 _x2) = FData1 x1
+--   {-# INLINE removeElem #-}
+-- 
+--   unRemoveElem SFirstIndexZero x (FData1 x2)                        = FData2 x x2
+--   unRemoveElem (SFirstIndexSucc Refl SFirstIndexZero) x (FData1 x1) = FData2 x1 x
+--   {-# INLINE unRemoveElem #-}
+-- 
+-- instance RemoveElem FData '[x1, x2, x3] where
+--   removeElem SFirstIndexZero (FData3 _x1 x2 x3)                                               = FData2 x2 x3
+--   removeElem (SFirstIndexSucc Refl SFirstIndexZero) (FData3 x1 _x2 x3)                        = FData2 x1 x3
+--   removeElem (SFirstIndexSucc Refl (SFirstIndexSucc Refl SFirstIndexZero)) (FData3 x1 x2 _x3) = FData2 x1 x2
+--   {-# INLINE removeElem #-}
+-- 
+--   unRemoveElem SFirstIndexZero x (FData2 x2 x3)                                               = FData3 x x2 x3
+--   unRemoveElem (SFirstIndexSucc Refl SFirstIndexZero) x (FData2 x1 x3)                        = FData3 x1 x x3
+--   unRemoveElem (SFirstIndexSucc Refl (SFirstIndexSucc Refl SFirstIndexZero)) x (FData2 x1 x2) = FData3 x1 x2 x
+--   {-# INLINE unRemoveElem #-}
 
 instance
   ( flist ~ FData
@@ -75,56 +75,10 @@ instance ConsFNil FData where
   fNil = FData0
   {-# INLINE fNil #-}
 
-instance UnConsFData FData '[x1] where
-  unConsFData (FData1 x1) = (x1, fNil)
-  {-# INLINE unConsFData #-}
-instance UnConsFData FData '[x1, x2] where
-  unConsFData (FData2 x1 x2) = (x1, FData1 x2)
-  {-# INLINE unConsFData #-}
-instance UnConsFData FData '[x1, x2, x3] where
-  unConsFData (FData3 x1 x2 x3) = (x1, FData2 x2 x3)
-  {-# INLINE unConsFData #-}
-instance UnConsFData FData '[x1, x2, x3, x4] where
-  unConsFData (FData4 x1 x2 x3 x4) = (x1, FData3 x2 x3 x4)
-  {-# INLINE unConsFData #-}
-instance UnConsFData FData '[x1, x2, x3, x4, x5] where
-  unConsFData (FData5 x1 x2 x3 x4 x5) = (x1, FData4 x2 x3 x4 x5)
-  {-# INLINE unConsFData #-}
-
-instance ConsFData0 FData '[x1] where
-  consF0 x (FData0) = FData1 x
-  {-# INLINE consF0 #-}
-instance ConsFData0 FData '[x1, x2] where
-  consF0 x (FData1 x1) = FData2 x x1
-  {-# INLINE consF0 #-}
-instance ConsFData0 FData '[x1, x2, x3] where
-  consF0 x (FData2 x1 x2) = FData3 x x1 x2
-  {-# INLINE consF0 #-}
-instance ConsFData0 FData '[x1, x2, x3, x4] where
-  consF0 x (FData3 x1 x2 x3) = FData4 x x1 x2 x3
-  {-# INLINE consF0 #-}
-instance ConsFData0 FData '[x1, x2, x3, x4, x5] where
-  consF0 x (FData4 x1 x2 x3 x4) = FData5 x x1 x2 x3 x4
-  {-# INLINE consF0 #-}
-
-instance ConsFData1 FData '[] where
-  consF1 x (FData0) = FData1 x
-  {-# INLINE consF1 #-}
-instance ConsFData1 FData '[x1] where
-  consF1 x (FData1 x1) = FData2 x x1
-  {-# INLINE consF1 #-}
-instance ConsFData1 FData '[x1, x2] where
-  consF1 x (FData2 x1 x2) = FData3 x x1 x2
-  {-# INLINE consF1 #-}
-instance ConsFData1 FData '[x1, x2, x3] where
-  consF1 x (FData3 x1 x2 x3) = FData4 x x1 x2 x3
-  {-# INLINE consF1 #-}
-instance ConsFData1 FData '[x1, x2, x3, x4] where
-  consF1 x (FData4 x1 x2 x3 x4) = FData5 x x1 x2 x3 x4
-  {-# INLINE consF1 #-}
-
-------
-
+$(generateUnconsFDataInstances [1..16])
+$(generateConsFData0Instances [1..16])
+$(generateConsFData1Instances [0..15])
+$(generateRemoveElemInstances [1..16])
 $(generateFDataByIndexInstances [(j, i) | i <- [1..16], j <- [0..i-1]])
 
 -- data instance FData f '[t] = FData1 { fdata1_0 :: !(f t) }
@@ -208,3 +162,53 @@ $(generateFDataByIndexInstances [(j, i) | i <- [1..16], j <- [0..i-1]])
 --   modifyFDataByIndex _ f (FData5 x1 x2 x3 x4 x5) = FData5 (f x1) x2 x3 x4 x5
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--
+-- instance UnConsFData FData '[x1] where
+--   unConsFData (FData1 x1) = (x1, FData0)
+--   {-# INLINE unConsFData #-}
+-- instance UnConsFData FData '[x1, x2] where
+--   unConsFData (FData2 x1 x2) = (x1, FData1 x2)
+--   {-# INLINE unConsFData #-}
+-- instance UnConsFData FData '[x1, x2, x3] where
+--   unConsFData (FData3 x1 x2 x3) = (x1, FData2 x2 x3)
+--   {-# INLINE unConsFData #-}
+-- instance UnConsFData FData '[x1, x2, x3, x4] where
+--   unConsFData (FData4 x1 x2 x3 x4) = (x1, FData3 x2 x3 x4)
+--   {-# INLINE unConsFData #-}
+-- instance UnConsFData FData '[x1, x2, x3, x4, x5] where
+--   unConsFData (FData5 x1 x2 x3 x4 x5) = (x1, FData4 x2 x3 x4 x5)
+--   {-# INLINE unConsFData #-}
+-- 
+-- instance ConsFData0 FData '[x1] where
+--   consF0 x (FData0) = FData1 x
+--   {-# INLINE consF0 #-}
+-- instance ConsFData0 FData '[x1, x2] where
+--   consF0 x (FData1 x1) = FData2 x x1
+--   {-# INLINE consF0 #-}
+-- instance ConsFData0 FData '[x1, x2, x3] where
+--   consF0 x (FData2 x1 x2) = FData3 x x1 x2
+--   {-# INLINE consF0 #-}
+-- instance ConsFData0 FData '[x1, x2, x3, x4] where
+--   consF0 x (FData3 x1 x2 x3) = FData4 x x1 x2 x3
+--   {-# INLINE consF0 #-}
+-- instance ConsFData0 FData '[x1, x2, x3, x4, x5] where
+--   consF0 x (FData4 x1 x2 x3 x4) = FData5 x x1 x2 x3 x4
+--   {-# INLINE consF0 #-}
+-- 
+-- instance ConsFData1 FData '[] where
+--   consF1 x (FData0) = FData1 x
+--   {-# INLINE consF1 #-}
+-- instance ConsFData1 FData '[x1] where
+--   consF1 x (FData1 x1) = FData2 x x1
+--   {-# INLINE consF1 #-}
+-- instance ConsFData1 FData '[x1, x2] where
+--   consF1 x (FData2 x1 x2) = FData3 x x1 x2
+--   {-# INLINE consF1 #-}
+-- instance ConsFData1 FData '[x1, x2, x3] where
+--   consF1 x (FData3 x1 x2 x3) = FData4 x x1 x2 x3
+--   {-# INLINE consF1 #-}
+-- instance ConsFData1 FData '[x1, x2, x3, x4] where
+--   consF1 x (FData4 x1 x2 x3 x4) = FData5 x x1 x2 x3 x4
+--   {-# INLINE consF1 #-}
+
+------

@@ -1,4 +1,4 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE AllowAmbiguousTypes, ViewPatterns #-}
 module Data.TypeList.FData.TH where
 
 import Data.TypeList.Families (Nat(..), SNat(..))
@@ -80,6 +80,9 @@ succName = 'Succ
 -- helpers ---------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+fDataCon :: Int -> Name
+fDataCon n = mkName $ "FData" ++ show n
+
 -- Promoted Nat at the type level: 0 -> 'Zero, 3 -> 'Succ ('Succ ('Succ 'Zero))
 natTy :: Int -> TH.Type
 natTy 0 = PromotedT zeroName
@@ -89,6 +92,10 @@ natTy n = AppT (PromotedT succName) (natTy (n-1))
 promotedListTy :: [TH.Type] -> TH.Type
 promotedListTy = foldr (\t acc -> AppT (AppT PromotedConsT t) acc) PromotedNilT
 
+-- Type names for x1, x2, ..., xn
+xTypeNames :: [Int] -> [Name]
+xTypeNames = map (\i -> mkName ("x" ++ show i))
+
 -- Field patterns for “get” (only the target gets a variable, others are _)
 mkGetPats :: Int -> Int -> Name -> [Pat]
 mkGetPats len idx var =
@@ -97,6 +104,9 @@ mkGetPats len idx var =
 -- Field patterns for “modify” (every field bound to xi)
 mkModPats :: Int -> [Name] -> [Pat]
 mkModPats len vars = [ VarP (vars !! i) | i <- [0 .. len-1] ]
+
+inlinePragma :: Name -> Pragma
+inlinePragma f = InlineP f Inline FunLike AllPhases
 
 --------------------------------------------------------------------------------
 -- | @generateFDataByIndexInstance idx len@
@@ -175,3 +185,156 @@ generateFDataByIndexInstance idx len = do
 
 generateFDataByIndexInstances :: [(Int, Int)] -> Q [Dec]
 generateFDataByIndexInstances = mapM (uncurry generateFDataByIndexInstance)
+
+-- | @generateUnconsFDataInstance n@ produces an instance of UnConsFData FData '[x1, ..., xn]
+generateUnconsFDataInstance :: Int -> Q Dec
+generateUnconsFDataInstance ((<1) -> True) = fail "generateUnconsFDataInstance: length must be at least 1"
+generateUnconsFDataInstance n = do
+  let className      = mkName "UnConsFData"
+      fData          = mkName "FData"
+      fDataNConName  = fDataCon n
+      fDataN'ConName = fDataCon (n-1)
+      xNames = xTypeNames [1 .. n]
+      x1Name  = mkName "x1"
+      fUnConsFData = mkName "unConsFData" -- unConsFData
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xNames)) $
+    [ FunD
+      fUnConsFData
+      [ Clause
+        [ ConP fDataNConName [] (VarP <$> xNames) ]
+        (NormalB $ TupE
+            [ Just (VarE x1Name)
+            , Just $ foldl' AppE (ConE fDataN'ConName) (VarE <$> drop 1 xNames)
+            ]
+        )
+        []
+      ]
+    , PragmaD (InlineP fUnConsFData Inline FunLike AllPhases)
+    ]
+    
+generateUnconsFDataInstances :: [Int] -> Q [Dec]
+generateUnconsFDataInstances = mapM generateUnconsFDataInstance
+
+-- | @generateConsFData0Instance n@ produces an instance of ConsFData0 FData '[x1, ..., xn]
+generateConsFData0Instance :: Int -> Q Dec
+generateConsFData0Instance ((<1) -> True) = fail "generateConsFData0Instance: length must be at least 1"
+generateConsFData0Instance n = do
+  let className      = mkName "ConsFData0"
+      fData          = mkName "FData"
+      fDataNConName  = fDataCon n
+      fDataN'ConName = fDataCon (n-1)
+      xTyNames = xTypeNames [1 .. n]
+      xNames = xTypeNames [1 .. n-1]
+      xName  = mkName "x"
+      fConsFData0 = mkName "consF0" -- consF0
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames)) $
+    [ FunD
+      fConsFData0
+      [ Clause
+        [ VarP xName
+        , ConP fDataN'ConName [] (VarP <$> xNames)
+        ]
+        (NormalB $ foldl' AppE (ConE fDataNConName) (VarE xName : fmap VarE xNames))
+        []
+      ]
+    , PragmaD (InlineP fConsFData0 Inline FunLike AllPhases)
+    ]
+
+generateConsFData0Instances :: [Int] -> Q [Dec]
+generateConsFData0Instances = mapM generateConsFData0Instance
+
+-- | @generateConsFData1Instance n@ produces an instance of ConsFData1 FData '[x1, ..., xn]
+generateConsFData1Instance :: Int -> Q Dec
+generateConsFData1Instance ((<0) -> True) = fail "generateConsFData1Instance: length must be at least 0"
+generateConsFData1Instance n = do
+  let className      = mkName "ConsFData1"
+      fData          = mkName "FData"
+      fDataNConName  = fDataCon n
+      fDataN'ConName = fDataCon (n+1)
+      xTyNames = xTypeNames [1 .. n]
+      xNames = xTypeNames [1 .. n]
+      xName  = mkName "x"
+      fConsFData1 = mkName "consF1" -- consF1
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames)) $
+    [ FunD
+      fConsFData1
+      [ Clause
+        [ VarP xName
+        , ConP fDataNConName [] (VarP <$> xNames)
+        ]
+        (NormalB $ foldl' AppE (ConE fDataN'ConName) (VarE xName : fmap VarE xNames))
+        []
+      ]
+    , PragmaD (InlineP fConsFData1 Inline FunLike AllPhases)
+    ]
+
+generateConsFData1Instances :: [Int] -> Q [Dec]
+generateConsFData1Instances = mapM generateConsFData1Instance
+
+-- | @generateRemoveElemInstance n@ produces an instance of RemoveElem FData '[x1, ..., xn]
+generateRemoveElemInstance :: Int -> Q Dec
+generateRemoveElemInstance ((<1) -> True) = fail "generateRemoveElemInstance: length must be at least 1"
+generateRemoveElemInstance n = do
+  when (n < 1) $
+    fail "generateRemoveElemInstance: list length must be ≥ 1"
+
+  -- type variables  x1 … xn
+  let tNames = xTypeNames [1 .. n]
+      tVars  = map VarT tNames
+      listTy = promotedListTy tVars
+
+      fRemoveElem = mkName "removeElem"    -- removeElem
+      cRemoveElem = mkName "RemoveElem"    -- RemoveElem, the class name
+      fUnRemoveElem = mkName "unRemoveElem" -- unRemoveElem
+
+      instHead = ConT cRemoveElem `AppT` ConT (mkName "FData") `AppT` listTy
+
+  -- ---------------------------------------------------------------------------
+  --  build the clauses for every index 0 … n-1
+  -- ---------------------------------------------------------------------------
+      clausesRemove  = [ mkRemoveClause  i  | i <- [0 .. n-1] ]
+      clausesUnRem   = [ mkUnRemoveClause i | i <- [0 .. n-1] ]
+
+      mkRemoveClause i =
+        let conN     = fDataCon n
+            xs       = xTypeNames [1 .. n]  -- x1, x2, ..., xn
+            patSFirstIndex = sFirstIndexPat i
+            patFData = ConP conN [] $
+                         [ if j == i then WildP else VarP (xs !! j)
+                         | j <- [0 .. n-1] ]
+            result   = foldl AppE (ConE (fDataCon (n-1)))
+                                   [ VarE (xs !! j) | j <- [0 .. n-1], j /= i ]
+        in Clause [patSFirstIndex, patFData] (NormalB result) []
+
+      mkUnRemoveClause i =
+        let xNew     = mkName "x"          -- the element being re-inserted
+            ys       = xTypeNames [1 .. n-1]  -- x1, x2, ..., xn-1
+            tailCon  = fDataCon (n-1)
+            patSFirstIndex = sFirstIndexPat i
+            patTail  = ConP tailCon [] (map VarP ys)
+
+            -- rebuild FData<n> with x inserted at position i
+            fields = [ if j == i
+                         then VarE xNew
+                         else VarE (ys !! (if j < i then j else j-1))
+                     | j <- [0 .. n-1] ]
+            result = foldl AppE (ConE (fDataCon n)) fields
+        in Clause [patSFirstIndex, VarP xNew, patTail] (NormalB result) []
+
+  -- ---------------------------------------------------------------------------
+  --  done
+  -- ---------------------------------------------------------------------------
+  pure $ InstanceD Nothing [] instHead
+          [ FunD fRemoveElem    clausesRemove
+          , FunD fUnRemoveElem  clausesUnRem
+          , PragmaD $ inlinePragma fRemoveElem
+          , PragmaD $ inlinePragma fUnRemoveElem
+          ]
+    where
+      sFirstIndexPat :: Int -> Pat
+      sFirstIndexPat 0 = ConP (mkName "SFirstIndexZero") [] []
+      sFirstIndexPat i =
+        ConP (mkName "SFirstIndexSucc") [] [ ConP (mkName "Refl") [] [] , sFirstIndexPat (i-1) ]
+
+generateRemoveElemInstances :: [Int] -> Q [Dec]
+generateRemoveElemInstances = mapM generateRemoveElemInstance

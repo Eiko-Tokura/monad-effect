@@ -61,8 +61,8 @@ library
     ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -flate-dmd-anal
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.Effect
-                    , Control.Monad.Effect.EventLoop
                     , Control.System
+                    , Control.System.EventLoop
                     , Data.Result
                     , Data.TypeList
                     , Data.TypeList.ConsFData

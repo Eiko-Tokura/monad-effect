@@ -1,7 +1,8 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
+-- | The module you should import to use for effectful computation
 module Control.Monad.Effect
   ( -- * EffTectful computation
-    Eff, Pure, EffT(..), EffL, PureL
+    Eff, Pure, EffT(..), EffL, PureL, EffDT, EffLT
   , ErrorText(..), ErrorValue(..), MonadThrowError(..)
   , embedEffT, embedMods, embedError
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
@@ -27,7 +28,7 @@ module Control.Monad.Effect
 
   -- * Modules
   , Module(..)
-  , queryModule, queriesModule
+  , queryModule, queriesModule, askModule, asksModule
   , localModule
   , getModule, getsModule
   , putModule, modifyModule
@@ -35,6 +36,7 @@ module Control.Monad.Effect
   -- * Re-exports
   , MonadIO(..)
   , ConsFDataList, FList, FData
+  , Identity(..)
   ) where
 
 import Control.Exception as E hiding (TypeError)
@@ -59,11 +61,13 @@ newtype EffT (c :: (Type -> Type) -> [Type] -> Type) (mods :: [Type]) (es :: [Ty
   = EffT { unEffT :: SystemRead c mods -> SystemState c mods -> m (Result es a, SystemState c mods) }
 
 -- | Short hand monads, recommended, uses FData under the hood
-type Eff  mods es  = EffT FData mods es IO
-type Pure mods es  = EffT FData mods es Identity
+type Eff   mods es  = EffT FData mods es IO
+type EffDT mods es  = EffT FData mods es
+type Pure  mods es  = EffT FData mods es Identity
 
--- | Short hand monads which uses FList instead of FData
+-- | Short hand monads which uses FList instead of FData as the data structure
 type EffL  mods es = EffT FList mods es IO
+type EffLT mods es = EffT FList mods es
 type PureL mods es = EffT FList mods es Identity
 
 -- | A constraint that checks the error list is empty in EffT
@@ -158,12 +162,12 @@ instance MonadTransControl (EffT c mods es) where
   {-# INLINE restoreT #-}
 
 -- | The error in throwM is thrown as MonadThrowError, which is a wrapper for SomeException.
-instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In MonadThrowError es) => MonadThrow (EffT c mods es m) where
+instance (Monad m, ConsFDataList c mods, In MonadThrowError es) => MonadThrow (EffT c mods es m) where
   throwM = effThrowIn . MonadThrowError . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch MonadThrowError, other errors are algebraic and should be caught by effCatch, effCatchIn, effCatchAll
-instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In' c MonadThrowError es) => MonadCatch (EffT c mods es m) where
+instance (Monad m, ConsFDataList c mods, In' c MonadThrowError es) => MonadCatch (EffT c mods es m) where
   catch ma handler = effCatchIn' ma $ \(MonadThrowError e) ->
     case fromException e of
       Just e' -> handler e'
@@ -182,7 +186,7 @@ embedEffT eff = EffT $ \rs' ss' -> do
 {-# INLINE embedEffT #-}
 
 -- | embed effect, but only change the mods list, the error list remains the same. The (inner) mods type variable is the first type parameter, suitable for type application.
-embedMods :: forall mods mods' c es m a. (Monad m, ConsFDataList c mods', SubList c mods mods', SubListEmbed es es) => EffT c mods es m a -> EffT c mods' es m a
+embedMods :: forall mods mods' c es m a. (Monad m, ConsFDataList c mods', SubListEmbed es es, SubList c mods mods') => EffT c mods es m a -> EffT c mods' es m a
 embedMods = embedEffT
 {-# INLINE embedMods #-}
 
@@ -295,10 +299,20 @@ queryModule :: forall mod mods c m es. (Monad m, In' c mod mods, Module mod) => 
 queryModule = queries @(SystemRead c mods) (getIn @c @mod)
 {-# INLINE queryModule #-}
 
+-- | The same as qeuryModule, just a synonym
+askModule :: forall mod mods c m es. (Monad m, In' c mod mods, Module mod) => EffT c mods es m (ModuleRead mod)
+askModule = queryModule
+{-# INLINE askModule #-}
+
 -- | Queries the module read inside the EffT monad, using a function to extract the value
 queriesModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleRead mod -> a) -> EffT c mods es m a
 queriesModule f = f <$> queryModule @mod @mods @c
 {-# INLINE queriesModule #-}
+
+-- | The same as queriesModule, just a synonym
+asksModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleRead mod -> a) -> EffT c mods es m a
+asksModule = queriesModule
+{-# INLINE asksModule #-}
 
 -- | Run the EffT computation with a modified module read
 localModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleRead mod -> ModuleRead mod) -> EffT c mods es m a -> EffT c mods es m a
@@ -348,9 +362,9 @@ liftIOText err = liftIOSafeWith (\(e :: SomeException) -> ErrorText $ err $ pack
 {-# INLINE liftIOText #-}
 
 -- | lift IO action into EffT, catch SomeException, turn it into Text
--- and prepend error message into ErrorText s
+-- and prepend error message into ErrorText s. The type `s` is a type level string and at the first type parameter, suitable for type application.
 --
--- example: `liftIOPrepend @"File" "File error:" $ readFile "file.txt"`
+-- example: `liftIOPrepend @"File" "File error:" $ readFile' "file.txt"`
 liftIOPrepend :: forall s mods c a. Text -> IO a -> EffT c mods '[ErrorText s] IO a
 liftIOPrepend err = liftIOText (err <>)
 {-# INLINE liftIOPrepend #-}

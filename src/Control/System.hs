@@ -5,6 +5,7 @@ module Control.System
     Module(..), System(..), Loadable(..)
   , runSystemWithInitData
 
+  , askModule, asksModule
   , queryModule, queriesModule
   , localModule
   , getModule, getsModule
@@ -140,7 +141,7 @@ instance SystemArgs '[] where
 -- | Inductive instance for system
 instance (Module mod, System mods, Loadable mod mods) => System (mod ': mods) where
   initAllModules (x :*** xs) = do
-    (rs, ss)  <- initAllModules xs -- >>= _
+    (rs, ss)  <- initAllModules xs
     (er, ss') <- liftIO $ runEffT rs ss $ initModule @mod x
     case er of
       RSuccess (r', s') -> return (r' :*** rs, s' :*** ss')

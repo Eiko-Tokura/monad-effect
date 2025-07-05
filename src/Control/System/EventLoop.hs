@@ -1,4 +1,4 @@
-module Control.Monad.Effect.EventLoop where
+module Control.System.EventLoop where
 
 import Control.System
 import Control.Monad.Effect

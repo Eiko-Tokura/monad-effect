@@ -44,7 +44,7 @@ computeAverageFromFile fp = do
 
   -- | throw an Algebraic error instead of an exception that you have no idea
   when (null content) $ do
-    effThrowIn ("file is empty" :: ErrorText "empty-file") 
+    effThrowIn ("file is empty" :: ErrorText "empty-file")
 
   -- | this `pureMaybeInWith :: In e es => e -> Maybe a -> Eff mods es a` turns a Maybe value into an ad-hoc exception type!
   parsed <- pureMaybeInWith ("parse error" :: ErrorText "parse-error") (parse content) 
