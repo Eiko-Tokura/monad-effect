@@ -4,14 +4,13 @@ module Data.TypeList.Families where
 import Data.Kind (Type, Constraint)
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
-import Fusion.Plugin.Types (Fuse(..))
 import GHC.TypeError
+import Unsafe.Coerce
 
 data Nat where
   Zero :: Nat
   Succ :: Nat -> Nat
 
-{-# ANN type SNat Fuse #-}
 data SNat (n :: Nat) where
   SZero :: SNat 'Zero
   SSucc :: SNat n -> SNat ('Succ n)
@@ -36,28 +35,58 @@ data Subtract (ts :: [Type]) (sub :: [Type]) (rs :: [Type]) where
 
 -- | A data-level proof of the existence of a sublist in a list.
 --
--- Examples
---
--- sub12 :: Sub '[y1, y2] (y : y1 : y2 : ys)
--- sub12 = e1 `SS` e2 `SS` SZ
---
--- look at this type signature, how cool is that? owo it claims that the latter list contains [y1, y2] in the exact position we require
 data SSub (ys :: [Type]) (xs :: [Type]) where
   SubZ :: SSub '[] xs                              -- ^ Base case: the empty sublist.
   SubS :: Elem y xs -> SSub ys xs -> SSub (y:ys) xs -- ^ Inductive case: the head element is in the list.
-
--- | singleton GADT for class
--- data SSubList (ys :: [Type]) (xs :: [Type]) where
---   SSubNil      :: SSubList '[] xs
---   SSubListCons
---     :: SFirstIndex y xs
---     -> SSubList ys xs
---     -> SSubList (y : ys) xs
 
 -- | A type-level function that concatenates two type-level lists.
 type family (xs :: [Type]) ++ (ys :: [Type]) :: [Type] where
   '[] ++ bs = bs
   (a:as) ++ bs = a : (as ++ bs)
+
+type family IfBool (b :: Bool) (t :: k) (e :: k) where
+  IfBool 'True  a _ = a
+  IfBool 'False _ b = b
+
+type family AddIfNotElem (a :: Type) (bs :: [Type]) :: [Type] where
+  AddIfNotElem a bs = IfBool (ElemIn a bs) bs (a ': bs)
+
+class CheckIfElem (a :: Type) (bs :: [Type]) where
+  singIfElem :: Either (ElemIn a bs :~: False) (ElemIn a bs :~: True, SFirstIndex a bs)
+
+instance CheckIfElem a '[] where
+  singIfElem = Left Refl
+  {-# INLINE singIfElem #-}
+
+instance CheckIfElem a (a ': xs) where
+  singIfElem = Right (Refl, SFirstIndexZero)
+  {-# INLINE singIfElem #-}
+
+-- | Axiom, validity relies only on the instance resolution
+axiomNotEqElem :: (NotEq a b) => ElemIn a bs :~: bool -> ElemIn a (b : bs) :~: bool
+axiomNotEqElem _ = unsafeCoerce Refl
+
+-- | Axiom, validity relies only on the instance resolution
+firstIndexTraverseNotEqElemIn :: forall e t ts. (NotEq e t, ElemIn e ts ~ True) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+firstIndexTraverseNotEqElemIn = unsafeCoerce Refl :: FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+{-# INLINE firstIndexTraverseNotEqElemIn #-}
+
+instance {-# OVERLAPPABLE #-} (NotEq a b, CheckIfElem a bs) => CheckIfElem a (b ': bs) where
+  singIfElem = case singIfElem @a @bs of
+    Left r@Refl -> case axiomNotEqElem @a @b @bs r of Refl -> Left Refl
+
+    Right (r@Refl, SFirstIndexZero) -> case axiomNotEqElem @a @b @bs r of
+      Refl -> case firstIndexTraverseNotEqElemIn @a @b @bs of
+        Refl -> Right (Refl, SFirstIndexSucc Refl SFirstIndexZero)
+
+    Right (r@Refl, SFirstIndexSucc Refl i) -> case axiomNotEqElem @a @b @bs r of
+      Refl -> case firstIndexTraverseNotEqElemIn @a @b @bs of
+        Refl -> Right (Refl, SFirstIndexSucc Refl (SFirstIndexSucc Refl i))
+
+type family ElemIn (a :: Type) (bs :: [Type]) :: Bool where
+  ElemIn a '[]       = 'False
+  ElemIn a (a ': _)  = 'True
+  ElemIn a (_ ': xs) = ElemIn a xs
 
 type family NotEq (a :: Type) (b :: Type) :: Constraint where
   NotEq a a = TypeError ('Text "Type " ':<>: 'ShowType a ':<>: 'Text " duplicated")
@@ -97,7 +126,18 @@ type family FirstIndex (e :: Type) (ts :: [Type]) :: Nat where
   FirstIndex e (t ': ts) = 'Succ (FirstIndex e ts)
   FirstIndex e '[] = TypeError ('Text "Error evaluating Index: Type " ':<>: 'ShowType e ':<>: 'Text " is not in the list")
 
-{-# ANN type SFirstIndex Fuse #-}
+type family BindMaybe (ma :: Maybe a) (kleiB :: a -> Maybe b) :: Maybe b
+
+-- | due to unsaturated type family not implemented yet, please note that arr can only be data / data family
+type family FmapMaybe (arr :: a -> b) (ma :: Maybe a) :: Maybe b where 
+  FmapMaybe _   'Nothing  = 'Nothing
+  FmapMaybe arr ('Just x) = 'Just (arr x)
+
+type family FirstIndexMaybe (e :: Type) (ts :: [Type]) :: Maybe Nat where
+  FirstIndexMaybe e (e ': ts) = 'Just 'Zero
+  FirstIndexMaybe e (t ': ts) = FmapMaybe 'Succ (FirstIndexMaybe e ts)
+  FirstIndexMaybe e '[]       = 'Nothing
+
 data SFirstIndex (e' :: Type) (ts' :: [Type]) where
   SFirstIndexZero :: SFirstIndex e (e ': ts) -- ^ Base case: the element is the head of the list.
   SFirstIndexSucc

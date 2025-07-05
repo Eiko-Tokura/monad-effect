@@ -62,6 +62,7 @@ library
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.Effect
                     , Control.Monad.Effect.EventLoop
+                    , Control.System
                     , Data.Result
                     , Data.TypeList
                     , Data.TypeList.ConsFData
@@ -109,16 +110,24 @@ test-suite rst-test
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -fspecialise-aggressively -flate-dmd-anal
+    ghc-options: -O2 -ddump-simpl -ddump-to-file -dsuppress-all -flate-dmd-anal
 
     -- Base language which the package is written in.
     default-language: GHC2021
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:    Examples
 
     -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
+    default-extensions: OverloadedStrings
+                      , DerivingStrategies
+                      , DerivingVia
+                      , DataKinds
+                      , GADTs
+                      , LambdaCase
+                      , TypeFamilies
+                      , TypeApplications
+                      , TemplateHaskell
 
     -- The interface type and version of the test suite.
     type:             exitcode-stdio-1.0
@@ -134,5 +143,7 @@ test-suite rst-test
         base >= 4 && < 5
       , rst
       , criterion
+      , containers
+      , text
       , mtl
       , fusion-plugin

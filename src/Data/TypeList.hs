@@ -1,5 +1,4 @@
-{-# LANGUAGE UndecidableSuperClasses, PatternSynonyms, DefaultSignatures, ViewPatterns, AllowAmbiguousTypes, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# LANGUAGE UndecidableSuperClasses, DefaultSignatures, AllowAmbiguousTypes, UndecidableInstances, DataKinds, TypeFamilies #-}
 -- | This module provides utilities for working with type-level lists in Haskell.
 -- It defines various types and functions to manipulate type-level lists, including
 -- finite lists, constrained lists, and dynamic lists.
@@ -47,9 +46,14 @@ class (FDataConstraint flist e es, In e es) => In' flist e es where
   modifyIn f = modifyInS (singFirstIndex @e @es) f
   {-# INLINE modifyIn #-}
 
+-- | Axiom
 firstIndexTraverseNotEqElem :: forall e t ts. (NotEq e t, In e ts) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
-firstIndexTraverseNotEqElem = unsafeCoerce Refl :: FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+firstIndexTraverseNotEqElem = unsafeCoerce Refl
 {-# INLINE firstIndexTraverseNotEqElem #-}
+
+-- | Axiom
+axiomInImpliesNonEmpty :: In e ts => NonEmpty ts :~: True
+axiomInImpliesNonEmpty = unsafeCoerce Refl
 
 -- | Base case for the In class. NotIn e ts => 
 instance In e (e : ts) where
@@ -75,12 +79,13 @@ instance (flist ~ FList, FDataConstraint flist e (e : ts), ConsFData flist) => I
   {-# INLINE modifyIn #-}
   
 -- | Inductive case for the In class. UniqueIn e (t : ts), 
-instance {-# OVERLAPPABLE #-} (NonEmpty ts ~ True, NotEq e t, In e ts) => In e (t : ts) where
+instance {-# OVERLAPPABLE #-} (NotEq e t, In e ts) => In e (t : ts) where
   singIndex = case firstIndexTraverseNotEqElem @e @t @ts of
     Refl -> SSucc (singIndex @e @ts)
   {-# INLINE singIndex #-}
   singFirstIndex = case firstIndexTraverseNotEqElem @e @t @ts of
-    Refl -> SFirstIndexSucc Refl (singFirstIndex @e @ts)
+    Refl -> case axiomInImpliesNonEmpty @e @ts of
+      Refl -> SFirstIndexSucc Refl (singFirstIndex @e @ts)
   {-# INLINE singFirstIndex #-}
   proofIndex = case firstIndexTraverseNotEqElem @e @t @ts of
     Refl -> case proofIndex @e @ts of Refl -> Refl

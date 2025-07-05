@@ -3,7 +3,8 @@ module Module.RS where
 import Control.Monad.Effect
 import Data.Kind
 import Data.TypeList
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
+import GHC.TypeLits
 import qualified Control.Monad.State as S
 
 -- | A module that provides reader functionality
@@ -15,6 +16,15 @@ instance Module (RModule r) where
   newtype ModuleState (RModule r)    = RState { rState :: r }
   data    ModuleEvent (RModule r)    = REvent
 
+-- | A reader module that has a name
+data RNamed (name :: Symbol) (r :: Type)
+
+instance Module (RNamed name r) where
+  newtype ModuleInitData (RNamed name r) = RNamedInitData { rNamedInitRead :: r }
+  data    ModuleRead  (RNamed name r)    = RNamedRead
+  newtype ModuleState (RNamed name r)    = RNamedState { rNamedState :: r }
+  data    ModuleEvent (RNamed name r)    = RNamedEvent
+
 -- | A module that provides state functionality
 data SModule (s :: Type)
 
@@ -23,6 +33,14 @@ instance Module (SModule s) where
   data    ModuleRead  (SModule s)    = SRead
   newtype ModuleState (SModule s)    = SState { sState :: s }
   data    ModuleEvent (SModule s)    = SEvent
+
+-- | A state module that has a name
+data SNamed (name :: Symbol) (s :: Type)
+instance Module (SNamed name s) where
+  newtype ModuleInitData (SNamed name s) = SNamedInitData { sNamedInitState :: s }
+  data    ModuleRead  (SNamed name s)    = SNamedRead
+  newtype ModuleState (SNamed name s)    = SNamedState { sNamedState :: s }
+  data    ModuleEvent (SNamed name s)    = SNamedEvent
 
 embedStateT :: forall s mods errs m c a. (Monad m, In' c (SModule s) mods) => S.StateT s (EffT c mods errs m) a -> EffT c mods errs m a
 embedStateT action = do
@@ -35,10 +53,8 @@ embedStateT action = do
 addStateT :: forall s mods errs m c a.
   ( SubList c mods (SModule s : mods)
   , (SModule s) `NotIn` mods
-  , Monad m
-  , ConsFData c
-  , FDataConstraint c (SModule s) (SModule s : mods)
   , In' c (SModule s) (SModule s : mods)
+  , Monad m
   )
   => S.StateT s (EffT c mods errs m) a -> EffT c (SModule s : mods) errs m a
 addStateT action = do
@@ -67,6 +83,10 @@ runRModule :: (ConsFDataList c (RModule r : mods), Monad m) => r -> EffT c (RMod
 runRModule r = runEffTOuter_ RRead (RState r)
 {-# INLINE runRModule #-}
 
+runRModuleIn :: (ConsFDataList c mods, RemoveElem c mods, Monad m, In' c (RModule r) mods) => r -> EffT c mods es m a -> EffT c (Remove (FirstIndex (RModule r) mods) mods) es m a
+runRModuleIn r = runEffTIn_ RRead (RState r)
+{-# INLINE runRModuleIn #-}
+
 -- | Warning: state will lose when you have an error
 runSModule :: (ConsFDataList c (SModule s : mods), Monad m) => s -> EffT c (SModule s : mods) errs m a -> EffT c mods errs m (s, a)
 runSModule s
@@ -74,23 +94,29 @@ runSModule s
   . runEffTOuter SRead (SState s)
 {-# INLINE runSModule #-}
 
+runSModuleIn :: (ConsFDataList c mods, RemoveElem c mods, Monad m, In' c (SModule s) mods) => s -> EffT c mods es m a -> EffT c (Remove (FirstIndex (SModule s) mods) mods) es m (a, s)
+runSModuleIn s
+  = fmap (second (\(SState s') -> s'))
+  . runEffTIn SRead (SState s)
+{-# INLINE runSModuleIn #-}
+
 runSModule_ :: (ConsFDataList c (SModule s : mods), Monad m) => s -> EffT c (SModule s : mods) errs m a -> EffT c mods errs m a
 runSModule_ s = runEffTOuter_ SRead (SState s)
 {-# INLINE runSModule_ #-}
 
-askR :: forall r mods errs m c. (ConsFData c, Monad m) => (In' c (RModule r) mods) => EffT c mods errs m r
+askR :: forall r mods errs m c. (ConsFDataList c mods, Monad m) => (In' c (RModule r) mods) => EffT c mods errs m r
 askR = do
   RState r <- getModule @(RModule r)
   return r
 {-# INLINE askR #-}
 
-asksR :: forall r mods errs m c a. (ConsFData c, Monad m) => (In' c (RModule r) mods) => (r -> a) -> EffT c mods errs m a
+asksR :: forall r mods errs m c a. (ConsFDataList c mods, Monad m) => (In' c (RModule r) mods) => (r -> a) -> EffT c mods errs m a
 asksR f = do
   RState r <- getModule @(RModule r)
   return (f r)
 {-# INLINE asksR #-}
 
-localR :: forall r mods errs m c a. (Monad m, ConsFData c, In' c (RModule r) mods) => (r -> r) -> EffT c mods errs m a -> EffT c mods errs m a
+localR :: forall r mods errs m c a. (Monad m, ConsFDataList c mods, In' c (RModule r) mods) => (r -> r) -> EffT c mods errs m a -> EffT c mods errs m a
 localR f action = do
   RState r <- getModule @(RModule r)
   let r' = f r
@@ -106,7 +132,7 @@ getS = do
   return s
 {-# INLINE getS #-}
 
-getsS :: forall s mods errs m c a. (Monad m, ConsFData c, In' c (SModule s) mods) => (s -> a) -> EffT c mods errs m a
+getsS :: forall s mods errs m c a. (Monad m, ConsFDataList c mods, In' c (SModule s) mods) => (s -> a) -> EffT c mods errs m a
 getsS f = do
   SState s <- getModule @(SModule s)
   return (f s)

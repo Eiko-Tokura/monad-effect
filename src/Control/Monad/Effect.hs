@@ -1,23 +1,20 @@
 {-# LANGUAGE DerivingVia, UndecidableInstances, AllowAmbiguousTypes, LinearTypes #-}
 module Control.Monad.Effect
   ( -- * EffTectful computation
-    Eff, Pure, EffT(..)
-  , EffL, PureL
-  , ErrorText(..)
-  , embedEffT--, embedEffT
-  , embedMods, embedError
-  , runEffT--, runEffT
-  , runEffT_, runEffT0, runEffT01, runEffT00
-  , runEffTWithInitData, runEffTNoError
+    Eff, Pure, EffT(..), EffL, PureL
+  , ErrorText(..), ErrorValue(..), MonadThrowError(..)
+  , embedEffT, embedMods, embedError
+  , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
+  , runEffTNoError
   , runEffTOuter, runEffTOuter_
   , runEffTIn, runEffTIn_
   , effCatch, effCatchAll, effCatchSystem
-  , effCatchIn
-  , effThrow, effThrowSystem
+  , effCatchIn, effCatchIn'
+  , effThrowIn
   , effEither, effEitherWith
   , effEitherIn, effEitherInWith
-  , effEitherSystemWith, effEitherSystemException
   , effMaybeWith, effMaybeInWith
+  , pureMaybeInWith, pureEitherInWith
   , errorToEither, errorToEitherAll
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
 
@@ -25,69 +22,79 @@ module Control.Monad.Effect
   , declareNoError
   , checkNoError
 
-  -- * Module and System
-  , Module(..), System(..), Loadable(..)
+  , SystemError(..), NoError
+  , SystemState, SystemRead, SystemEvent, SystemInitData
+
+  -- * Modules
+  , Module(..)
   , queryModule, queriesModule
   , localModule
   , getModule, getsModule
   , putModule, modifyModule
-
-  , SystemError(..), NoError
-  , SystemInitData, SystemState, SystemRead, SystemEvent
-  , SystemInitDataHardCode
-
-  -- * Loadable
-  , ModuleInitDataHardCode
-  , LoadableEnv(..), LoadableArgs(..), SystemEnv(..), SystemArgs(..)
 
   -- * Re-exports
   , MonadIO(..)
   , ConsFDataList, FList, FData
   ) where
 
-import Data.TypeList
-import Data.TypeList.FData
-import Data.Bifunctor
-import Data.Kind
-import Data.Text (Text, unpack, pack)
-import Data.Type.Equality
-import Data.Proxy
-import Data.String (IsString)
-import Data.Functor.Identity
-import GHC.TypeError
-import GHC.TypeLits
-import Control.Concurrent.STM
-import Control.Applicative
+import Control.Exception as E hiding (TypeError)
+import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Control.Monad.RST
-import Control.Monad.Catch
 import Control.Monad.Trans.Control
-import Control.Exception as E hiding (TypeError)
+import Data.Bifunctor
+import Data.Functor.Identity
+import Data.Kind
+import Data.Proxy
+import Data.String (IsString)
+import Data.Text (Text, unpack, pack)
+import Data.Type.Equality
+import Data.TypeList
+import Data.TypeList.FData
+import GHC.TypeError
+import GHC.TypeLits
 
 -- | EffTectful computation, using modules as units of effect
--- newtype EffT mods es a = EffT { unEffT :: SystemRead mods -> SystemState mods -> IO (Result es a, SystemState mods) }
-newtype EffT (c :: (Type -> Type) -> [Type] -> Type) mods es m a = EffT { unEffT :: SystemRead c mods -> SystemState c mods -> m (Result es a, SystemState c mods) }
+newtype EffT (c :: (Type -> Type) -> [Type] -> Type) (mods :: [Type]) (es :: [Type]) m a
+  = EffT { unEffT :: SystemRead c mods -> SystemState c mods -> m (Result es a, SystemState c mods) }
 
+-- | Short hand monads, recommended, uses FData under the hood
 type Eff  mods es  = EffT FData mods es IO
 type Pure mods es  = EffT FData mods es Identity
 
+-- | Short hand monads which uses FList instead of FData
 type EffL  mods es = EffT FList mods es IO
 type PureL mods es = EffT FList mods es Identity
 
+-- | A constraint that checks the error list is empty in EffT
 type family MonadNoError m :: Constraint where
   MonadNoError (EffT c mods NoError m) = ()
   MonadNoError (EffT c mods es      m) = TypeError ('Text "MonadNoError: the effect has error, catch them")
   MonadNoError _ = TypeError ('Text "MonadNoError: not an EffT type")
 
+-- | identity function that checks a MonadNoError constraint
 checkNoError :: MonadNoError m => m a -> m a
 checkNoError = id
 {-# INLINE checkNoError #-}
 
+-- | a newtype wrapper ErrorText that wraps a Text with a name (symbol type)
+-- useful for creating ad-hoc error type
 newtype ErrorText (s :: Symbol) = ErrorText Text
   deriving newtype (IsString)
 
+-- | a newtype wrapper ErrorText that wraps a custom value type v with a name (symbol type)
+-- useful for creating ad-hoc error type
+newtype ErrorValue (a :: Symbol) (v :: Type) = ErrorValue v
+
+-- | A wrapper dedicated for errors living in MonadThrow and MonadCatch
+newtype MonadThrowError = MonadThrowError SomeException
+  deriving Show
+
 instance KnownSymbol s => Show (ErrorText s) where
-  show (ErrorText t) = "Error of type " ++ symbolVal (Proxy @s) ++ ": " ++ unpack t
+  show (ErrorText t) = "ErrorText of type " ++ symbolVal (Proxy @s) ++ ": " ++ unpack t
+
+instance (KnownSymbol s, Show v) => Show (ErrorValue s v) where
+  show (ErrorValue v) = "ErrorValue of type " <> symbolVal (Proxy @s) <> ": " <> show v
 
 instance Functor m => Functor (EffT c mods es m) where
   fmap f (EffT eff) = EffT $ \rs ss -> first (fmap f) <$> eff rs ss
@@ -150,18 +157,17 @@ instance MonadTransControl (EffT c mods es) where
   restoreT mRes = EffT $ \_ _ -> mRes
   {-# INLINE restoreT #-}
 
--- | The error in throwM is thrown to the top level as SystemErrorException SomeException
-instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In SystemError es) => MonadThrow (EffT c mods es m) where
-  throwM = embedEffT @mods @mods @_ @_ @es @es . effThrowSystem @es . SystemErrorException . toException
+-- | The error in throwM is thrown as MonadThrowError, which is a wrapper for SomeException.
+instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In MonadThrowError es) => MonadThrow (EffT c mods es m) where
+  throwM = effThrowIn . MonadThrowError . toException
   {-# INLINE throwM #-}
 
--- | this can only catch SystemErrorException SomeException, other errors are algebraic
-instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In' c SystemError es) => MonadCatch (EffT c mods es m) where
-  catch ma handler = effCatchSystem ma $ \case
-    SystemErrorException e -> case fromException e of
+-- | this can only catch MonadThrowError, other errors are algebraic and should be caught by effCatch, effCatchIn, effCatchAll
+instance (Monad m, ConsFDataList c mods, SubList c mods mods, SubList c es es, In' c MonadThrowError es) => MonadCatch (EffT c mods es m) where
+  catch ma handler = effCatchIn' ma $ \(MonadThrowError e) ->
+    case fromException e of
       Just e' -> handler e'
-      Nothing -> embedEffT @mods @mods . effThrowSystem @es $ SystemErrorException e
-    e                      -> effThrow e
+      Nothing -> effThrowIn $ MonadThrowError e
   {-# INLINE catch #-}
 
 -- | embed smaller effect into larger effect
@@ -175,89 +181,75 @@ embedEffT eff = EffT $ \rs' ss' -> do
   return (subListResultEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEffT #-}
 
--- embedEffT :: forall mods mods' es es' a. (SubList mods mods', SubList es es')
---   => EffT mods es a -> EffT mods' es' a
--- embedEffT effT = coerce $ embedEffT effT
--- {-# INLINE embedEffT #-}
-
--- proofEmbedEffT :: Monad m => ProofSubList mods mods' -> ProofSubList es es' -> EffT c mods es m a -> EffT c mods' es' m a
--- proofEmbedEffT pm pe eff = EffT $ \rs' ss' -> do
---   let rs = proofGetSubListF pm rs'
---       ss = proofGetSubListF pm ss'
---       modsEffT = unEffT eff
---   (emods, ss1) <- modsEffT rs ss
---   return (proofSubListErrorEmbed pe emods, proofSubListUpdateF pm ss' ss1)
--- {-# INLINE proofEmbedEffT #-}
-
+-- | embed effect, but only change the mods list, the error list remains the same. The (inner) mods type variable is the first type parameter, suitable for type application.
 embedMods :: forall mods mods' c es m a. (Monad m, ConsFDataList c mods', SubList c mods mods', SubListEmbed es es) => EffT c mods es m a -> EffT c mods' es m a
 embedMods = embedEffT
 {-# INLINE embedMods #-}
 
+-- | embed effect, but only change the error list, the mods list remains the same. The (inner) es type variable is the first type parameter, suitable for type application.
 embedError :: forall es es' c mods m a. (Monad m, SubList c mods mods, SubListEmbed es es') => EffT c mods es m a -> EffT c mods es' m a
 embedError = embedEffT
 {-# INLINE embedError #-}
 
+-- | Run the EffT computation with data needed, returns the potential error result and the new state in the base monad.
 runEffT :: forall mods es m c a. Monad m => SystemRead c mods -> SystemState c mods -> EffT c mods es m a -> m (Result es a, SystemState c mods)
-runEffT rs ss eff = unEffT eff rs ss
+runEffT rs ss = \eff -> unEffT eff rs ss
 {-# INLINE runEffT #-}
 
+-- | Same as runEff but ignores the new state
 runEffT_ :: forall mods es m c a
   .  Monad m
   => SystemRead c mods
   -> SystemState c mods
   -> EffT c mods es m a
   -> m (Result es a)
-runEffT_ rs ss eff = fst <$> runEffT rs ss eff
+runEffT_ rs ss = fmap fst . runEffT rs ss
 {-# INLINE runEffT_ #-}
 
--- | If error happens at initialization, it will return Left SystemError
--- If error happens during event loop, it will return Right (Left (SList (SystemError : es)))
-runEffTWithInitData :: forall mods es m c a. (ConsFDataList c mods, System mods, MonadIO m)
-  => SystemInitData c mods
-  -> EffT c mods es m a
-  -> m
-      (Either SystemError -- ^ if error happens at initialization
-        ( Result es a -- ^ if error happens during event loop
-        , SystemState c mods)
-      )
-runEffTWithInitData initData eff = do
-  liftIO (runEffT0 (initAllModules @mods initData)) >>= \case
-    RSuccess (rs, ss)  -> Right <$> runEffT rs ss eff
-    RFailure (EHead e) -> return $ Left e
-
+-- | same as runEff, but get rid of the Result wrapper when you have empty error list
 runEffTNoError :: forall mods m c a
   .  Monad m
   => SystemRead c mods
   -> SystemState c mods
   -> EffT c mods NoError m a
   -> m (a, SystemState c mods)
-runEffTNoError rs ss eff = first resultNoError <$> unEffT eff rs ss
+runEffTNoError rs ss = fmap (first resultNoError) . runEffT rs ss
 {-# INLINE runEffTNoError #-}
 
+-- | runs the EffT with no modules
 runEffT0 :: ConsFNil c => EffT c '[] es IO a -> IO (Result es a)
 runEffT0 = fmap fst . runEffT fNil fNil
 {-# INLINE runEffT0 #-}
 
+-- | runs the EffT with no modules and a single possible error type, return as classic Either type
 runEffT01 :: ConsFNil c => EffT c '[] '[e] IO a -> IO (Either e a)
 runEffT01 = fmap (first fromElistSingleton . resultToEither) . runEffT0
+{-# INLINE runEffT01 #-}
 
+-- | runs the EffT with no modules and no error
 runEffT00 :: ConsFNil c => EffT c '[] NoError IO a -> IO a
 runEffT00 = fmap resultNoError . runEffT0
 {-# INLINE runEffT00 #-}
 
--- | Warning: state will lose when you have an error
-runEffTOuter :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m) => ModuleRead mod -> ModuleState mod -> EffT c (mod : mods) es m a -> EffT c mods es m (ModuleState mod, a)
+-- | Runs a EffT computation and eliminate the most outer effect with its input given
+--
+-- Warning: `ModuleState mod` will be lost when the outer EffT returns an exception
+runEffTOuter :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
+  => ModuleRead mod -> ModuleState mod -> EffT c (mod : mods) es m a -> EffT c mods es m (ModuleState mod, a)
 runEffTOuter mread mstate eff = EffT
   $ \modsRead modsState ->
     (\(ea, (s :*** ss)) -> ((s,) <$> ea, ss)) <$> (unEffT @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
 {-# INLINE runEffTOuter #-}
 
-runEffTOuter_ :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m) => ModuleRead mod -> ModuleState mod -> EffT c (mod : mods) es m a -> EffT c mods es m a
+-- | the same as runEffTOuter, but discards the state
+runEffTOuter_ :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
+  => ModuleRead mod -> ModuleState mod -> EffT c (mod : mods) es m a -> EffT c mods es m a
 runEffTOuter_ mread mstate eff = EffT
   $ \modsRead modsState ->
     (\(ea, (_ :*** ss)) -> (ea, ss)) <$> (unEffT @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
 {-# INLINE runEffTOuter_ #-}
 
+-- | Running an inner module of EffT, eliminates it
 runEffTIn :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
   => ModuleRead mod -> ModuleState mod -> EffT c mods es m a
   -> EffT c (Remove (FirstIndex mod mods) mods) es m (a, ModuleState mod)
@@ -270,6 +262,7 @@ runEffTIn mread mstate eff = EffT $ \modsRead modsState -> do
     RFailure es -> pure (RFailure es, removeElem (singFirstIndex @mod @mods) ss')
 {-# INLINE runEffTIn #-}
 
+-- | The same as runEffTIn, but discards the state
 runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
   => ModuleRead mod -> ModuleState mod -> EffT c mods es m a
   -> EffT c (Remove (FirstIndex mod mods) mods) es m a
@@ -277,200 +270,66 @@ runEffTIn_ mread mstate eff = fst <$> runEffTIn @mod @mods mread mstate eff
 {-# INLINE runEffTIn_ #-}
 -------------------------------------- instances --------------------------------------
 
+-- | The unit of Effect, a module is a type with certain associated data family types
 class Module mod where
-  data ModuleInitData mod :: Type
   data ModuleRead     mod :: Type
   data ModuleState    mod :: Type
   data ModuleEvent    mod :: Type
+  data ModuleInitData mod :: Type
 
-type SystemInitDataHardCode c mods = c ModuleInitDataHardCode mods
-type SystemInitData c mods = c     ModuleInitData mods
 type SystemState    c mods = c     ModuleState    mods
 type SystemRead     c mods = c     ModuleRead     mods
 type SystemEvent      mods = UList ModuleEvent    mods
+type SystemInitData c mods = c     ModuleInitData mods
+
 data SystemError
   = SystemErrorException SomeException
   | SystemErrorText      Text
   deriving Show
 
+-- | NoError is just a synonym for empty list
 type NoError = '[]
 
+-- | Queries the module read inside the EffT monad
 queryModule :: forall mod mods c m es. (Monad m, In' c mod mods, Module mod) => EffT c mods es m (ModuleRead mod)
 queryModule = queries @(SystemRead c mods) (getIn @c @mod)
 {-# INLINE queryModule #-}
 
+-- | Queries the module read inside the EffT monad, using a function to extract the value
 queriesModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleRead mod -> a) -> EffT c mods es m a
 queriesModule f = f <$> queryModule @mod @mods @c
 {-# INLINE queriesModule #-}
 
+-- | Run the EffT computation with a modified module read
 localModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleRead mod -> ModuleRead mod) -> EffT c mods es m a -> EffT c mods es m a
 localModule f eff = EffT $ \rs ss -> do
   let rs' = modifyIn @c @mod f rs
   unEffT eff rs' ss
 {-# INLINE localModule #-}
 
+-- | Get the module state inside the EffT monad
 getModule :: forall mod mods es m c. (Monad m, In' c mod mods, Module mod) => EffT c mods es m (ModuleState mod)
 getModule = gets @(SystemState c mods) (getIn @c @mod)
 {-# INLINE getModule #-}
 
+-- | Get the module state inside the EffT monad, using a function to extract the value
 getsModule :: forall mod mods es m c a. (Monad m, In' c mod mods, Module mod) => (ModuleState mod -> a) -> EffT c mods es m a
 getsModule f = f <$> getModule @mod
 {-# INLINE getsModule #-}
 
+-- | Put the module state inside the EffT monad
 putModule :: forall mod mods es m c. (Monad m, In' c mod mods, Module mod) => ModuleState mod -> EffT c mods es m ()
 putModule x = modify @(SystemState c mods) (modifyIn $ const x)
 {-# INLINE putModule #-}
 
+-- | Modify the module state inside the EffT monad
 modifyModule :: forall mod mods es m c. (Monad m, In' c mod mods, Module mod) => (ModuleState mod -> ModuleState mod) -> EffT c mods es m ()
 modifyModule f = modify @(SystemState c mods) (modifyIn f)
 {-# INLINE modifyModule #-}
 
--- | Specifies that the module can load after mods are loaded
--- in practice we could use
--- instance SomeModuleWeNeed `In` mods => Loadable mods SomeModuleToLoad
-class Loadable mod mods where
-  initModule  :: ModuleInitData mod -> EffT c mods '[SystemError] IO (ModuleRead mod, ModuleState mod)
-
-  beforeEvent :: EffT c (mod : mods) NoError IO ()
-  beforeEvent = return ()
-  {-# INLINE beforeEvent #-}
-
-  afterEvent  :: EffT c (mod : mods) NoError IO ()
-  afterEvent = return ()
-  {-# INLINE afterEvent #-}
-
-  moduleEvent :: EffT c (mod : mods) NoError IO (STM (ModuleEvent mod))
-  moduleEvent = return empty
-  {-# INLINE moduleEvent #-}
-
-  handleEvent :: ModuleEvent mod -> EffT c (mod : mods) NoError IO ()
-  handleEvent _ = return ()
-  {-# INLINE handleEvent #-}
-
-  releaseModule :: EffT c (mod : mods) NoError IO () -- ^ release resources, quit module
-  releaseModule = return ()
-  {-# INLINE releaseModule #-}
-
-data family ModuleInitDataHardCode mod :: Type
-
-class Loadable mod mods => LoadableEnv mod mods where
-  readInitDataFromEnv :: ModuleInitDataHardCode mod -> EffT c '[] '[SystemError] IO (ModuleInitData mod)
-  -- ^ Read module init data from environment, or other means
-  -- one can change this to SystemInitData mods -> IO (ModuleInitData mod)
-
-class Loadable mod mods => LoadableArgs mod mods where
-  readInitDataFromArgs :: ModuleInitDataHardCode mod -> [String] -> EffT c '[] '[SystemError] IO (ModuleInitData mod)
-  -- ^ Read module init data from command line arguments, or using comand line arguments to read other things
-  -- one can change this to SystemInitData mods -> [String] -> IO (ModuleInitData mod)
-
-------------------------------------------system : a list of modules------------------------------------------
--- | System is a list of modules loaded in sequence with dependency verification
---
--- the last module in the list is the first to be loaded
--- and also the first to execute beforeEvent and afterEvent
-class System mods where
-  initAllModules :: ConsFDataList c mods => SystemInitData c mods -> EffT c '[] '[SystemError] IO (SystemRead c mods, SystemState c mods)
-
-  listenToEvents :: ConsFDataList c mods => EffT c mods '[] IO (STM (SystemEvent mods))
-
-  handleEvents :: ConsFDataList c mods => SystemEvent mods -> EffT c mods '[] IO ()
-
-  beforeSystem :: ConsFDataList c mods => EffT c mods '[] IO ()
-
-  afterSystem  :: ConsFDataList c mods => EffT c mods '[] IO ()
-
-  releaseSystem :: ConsFDataList c mods => EffT c mods '[] IO ()
-  -- ^ safely release all resources system acquired
-  -- Warning: releaseSystem is done in reverse order of initAllModules
-  -- i.e. the head of the list is the first to be released
-
-class System mods => SystemEnv mods where
-  readSystemInitDataFromEnv :: ConsFDataList c mods => SystemInitDataHardCode c mods -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
-
-class System mods => SystemArgs mods where
-  readSystemInitDataFromArgs :: ConsFDataList c mods => SystemInitDataHardCode c mods -> [String] -> EffT c '[] '[SystemError] IO (SystemInitData c mods)
-
--- | base case for system
-instance System '[] where
-  initAllModules _ = return (fNil, fNil)
-  {-# INLINE initAllModules #-}
-
-  listenToEvents = return empty
-  {-# INLINE listenToEvents #-}
-
-  handleEvents _ = return ()
-  {-# INLINE handleEvents #-}
-
-  beforeSystem = return ()
-  {-# INLINE beforeSystem #-}
-
-  afterSystem = return ()
-  {-# INLINE afterSystem #-}
-
-  releaseSystem = return ()
-  {-# INLINE releaseSystem #-}
-
-instance SystemEnv '[] where
-  readSystemInitDataFromEnv _ = return fNil
-  {-# INLINE readSystemInitDataFromEnv #-}
-
-instance SystemArgs '[] where
-  readSystemInitDataFromArgs _ _ = do
-    return fNil
-  {-# INLINE readSystemInitDataFromArgs #-}
-
--- | Inductive instance for system
-instance (Module mod, System mods, Loadable mod mods) => System (mod ': mods) where
-  initAllModules (x :*** xs) = do
-    (rs, ss)  <- initAllModules xs -- >>= _
-    (er, ss') <- liftIO $ runEffT rs ss $ initModule @mod x
-    case er of
-      RSuccess (r', s') -> return (r' :*** rs, s' :*** ss')
-      RFailure (EHead e) -> effThrowSystem e
-  {-# INLINE initAllModules #-}
-
-  beforeSystem = do
-    embedEffT $ beforeSystem @mods
-    beforeEvent @mod
-  {-# INLINE beforeSystem #-}
-
-  afterSystem = do
-    embedEffT $ afterSystem @mods
-    afterEvent @mod
-  {-# INLINE afterSystem #-}
-
-  listenToEvents = do
-    tailEvents <- embedEffT $ listenToEvents @mods
-    headEvent  <- moduleEvent @mod
-    return $ UHead <$> headEvent <|> UTail <$> tailEvents
-  {-# INLINE listenToEvents #-}
-
-  handleEvents (UHead x) = handleEvent @mod x
-  handleEvents (UTail xs) = embedEffT $ handleEvents @mods xs
-  {-# INLINE handleEvents #-}
-
-  releaseSystem = do
-    releaseModule @mod
-    embedEffT $ releaseSystem @mods
-  {-# INLINE releaseSystem #-}
-
-instance (SubList c mods (mod:mods), Module mod, SystemEnv mods, Loadable mod mods, LoadableEnv mod mods) => SystemEnv (mod ': mods) where
-  readSystemInitDataFromEnv (im :*** ims) = do
-    xs <- readSystemInitDataFromEnv @mods ims
-    x  <- readInitDataFromEnv @mod @mods im
-    return $ x :*** xs
-  {-# INLINE readSystemInitDataFromEnv #-}
-
-instance (SubList c mods (mod:mods), Module mod, SystemArgs mods, Loadable mod mods, LoadableArgs mod mods) => SystemArgs (mod ': mods) where
-  readSystemInitDataFromArgs (im :*** ims) args = do
-    xs <- readSystemInitDataFromArgs @mods ims args
-    x  <- readInitDataFromArgs @mod @mods im args
-    return $ x :*** xs
-  {-# INLINE readSystemInitDataFromArgs #-}
-
--- | Declare that the computation has no error, i.e. it is safe to run
+-- | Declare that the computation has no error, it just discards the error types. When the error actually happen it will be runtime exception.
 declareNoError :: Monad m => EffT c mods es m a -> EffT c mods NoError m a
-declareNoError eff = eff `effCatchAll` \_es -> error "unsafeDeclareNoError: declared NoError, but got errors"
+declareNoError eff = eff `effCatchAll` \_es -> error "declareNoError: declared NoError, but got errors"
 {-# INLINE declareNoError #-}
 
 -- | lift IO action into EffT, catch IOException and return as Left, synonym for effIOSafe
@@ -478,10 +337,12 @@ liftIOException :: IO a -> EffT c mods '[IOException] IO a
 liftIOException = liftIOAt
 {-# INLINE liftIOException #-}
 
+-- | lift IO and catch a specific type of exception
 liftIOAt :: Exception e => IO a -> EffT c mods '[e] IO a
 liftIOAt = liftIOSafeWith id
 {-# INLINE liftIOAt #-}
 
+-- | Capture SomeException in IO and turn it into a ErrorText
 liftIOText :: forall s mods c a. (Text -> Text) -> IO a -> EffT c mods '[ErrorText s] IO a
 liftIOText err = liftIOSafeWith (\(e :: SomeException) -> ErrorText $ err $ pack $ show e)
 {-# INLINE liftIOText #-}
@@ -494,7 +355,7 @@ liftIOPrepend :: forall s mods c a. Text -> IO a -> EffT c mods '[ErrorText s] I
 liftIOPrepend err = liftIOText (err <>)
 {-# INLINE liftIOPrepend #-}
 
--- | lift IO action into EffT, catch IOException into a custom error and return as Left
+-- | lift IO action into EffT, catch specific type of exception e' into a custom error e
 liftIOSafeWith :: Exception e' => (e' -> e) -> IO a -> EffT c mods '[e] IO a
 liftIOSafeWith f io = EffT $ \_ s -> do
   a :: Either e' a <- E.try io
@@ -522,6 +383,7 @@ errorToEitherAll eff = EffT $ \rs ss -> do
     RFailure es   -> return (RSuccess (Left es), stateMods)
 {-# INLINE errorToEitherAll #-}
 
+-- | Catch SystemError
 effCatchSystem :: (Monad m, In' c SystemError es) => EffT c mods es m a -> (SystemError -> EffT c mods es m a) -> EffT c mods es m a
 effCatchSystem eff h = EffT $ \rs ss -> do
   (eResult, stateMods) <- (unEffT eff) rs ss
@@ -532,6 +394,7 @@ effCatchSystem eff h = EffT $ \rs ss -> do
     RFailure es -> return (RFailure es, stateMods)
 {-# INLINE effCatchSystem #-}
 
+-- | Catch the first error in the error list, and handle it with a handler function
 effCatch :: Monad m => EffT c mods (e : es) m a -> (e -> EffT c mods es m a) -> EffT c mods es m a
 effCatch eff h = EffT $ \rs ss -> do
   (eResult, stateMods) <- (unEffT eff) rs ss
@@ -541,8 +404,9 @@ effCatch eff h = EffT $ \rs ss -> do
     RFailure (ETail es) -> return (RFailure $ es, stateMods)
 {-# INLINE effCatch #-}
 
-effCatchIn
-  :: forall e es mods m c a es'. (Monad m, In e es, es' ~ Remove (FirstIndex e es) es)
+-- | Catch a specific error type in the error list, and handle it with a handler function.
+-- This will remove the error type from the error list.
+effCatchIn :: forall e es mods m c a es'. (Monad m, In e es, es' ~ Remove (FirstIndex e es) es)
   => EffT c mods es m a -> (e -> EffT c mods es' m a) -> EffT c mods es' m a
 effCatchIn eff h = EffT $ \rs ss -> do
   (eResult, stateMods) <- (unEffT eff) rs ss
@@ -552,6 +416,20 @@ effCatchIn eff h = EffT $ \rs ss -> do
     Right eResult' -> return (eResult', stateMods)
 {-# INLINE effCatchIn #-}
 
+-- | Same as effCatchIn, but Does Not remove the error type
+effCatchIn' :: forall e es mods m c a. (Monad m, In e es)
+  => EffT c mods es m a -> (e -> EffT c mods es m a) -> EffT c mods es m a
+effCatchIn' eff h = EffT $ \rs ss -> do
+  r@(eResult, _) <- (unEffT eff) rs ss
+  case eResult of
+    RSuccess _ -> return r
+    RFailure es  -> case getEMaybe @e @es es of
+      Just e' -> unEffT (h e') rs ss
+      Nothing -> return r
+{-# INLINE effCatchIn' #-}
+
+-- | Catch all errors in the error list, and handle it with a handler function. You can pattern match on `EList es` to handle the errors.
+-- Removes all errors from the error list.
 effCatchAll :: Monad m => EffT c mods es m a -> (EList es -> EffT c mods NoError m a) -> EffT c mods NoError m a
 effCatchAll eff h = EffT $ \rs ss -> do
   (er, stateMods) <- (unEffT eff) rs ss
@@ -560,58 +438,37 @@ effCatchAll eff h = EffT $ \rs ss -> do
     RFailure es   -> (unEffT $ h es) rs ss
 {-# INLINE effCatchAll #-}
 
-effThrow :: Monad m => In e es => e -> EffT c mods es m a
-effThrow e = EffT $ \_ s -> pure (RFailure $ embedE e, s)
-{-# INLINE effThrow #-}
+-- | Throw into the error list
+effThrowIn :: (Monad m, In e es) => e -> EffT c mods es m a
+effThrowIn e = EffT $ \_ s -> pure (RFailure $ embedE e, s)
+{-# INLINE effThrowIn #-}
 
-effThrowSystem :: forall es mods m c a. Monad m => In SystemError es => SystemError -> EffT c mods es m a
-effThrowSystem = effThrow
-{-# INLINE effThrowSystem #-}
-
-effEitherWith :: (Monad m) => (e -> e') -> EffT c mods es m (Either e a) -> EffT c mods (e' : es) m a
-effEitherWith f eff = EffT $ \rs ss -> do
-  (eResult, stateMods) <- unEffT eff rs ss
-  case eResult of
-    RSuccess (Right a) -> return (RSuccess a, stateMods)
-    RSuccess (Left e)  -> return (RFailure $ EHead $ f e, stateMods)
-    RFailure sysE      -> return (RFailure $ ETail sysE, stateMods)
+-- | Turn an Either return type into the error list with a function, adding the error type if it is not already in the error list.
+-- The inner monad type needs to be precise due to the way type inference works.
+effEitherWith :: forall e e' es mods c m a. (CheckIfElem e' es, Monad m)
+  => (e -> e') -> EffT c mods es m (Either e a) -> EffT c mods (AddIfNotElem e' es) m a
+effEitherWith f eff = case singIfElem @e' @es of
+  Left Refl           -> EffT $ \rs ss -> do
+    (eResult, stateMods) <- unEffT eff rs ss
+    case eResult of
+      RSuccess (Right a) -> return (RSuccess a, stateMods)
+      RSuccess (Left e)  -> return (RFailure $ EHead $ f e, stateMods)
+      RFailure es        -> return (RFailure $ ETail es, stateMods)
+  Right (Refl, index) -> EffT $ \rs ss -> do
+    (eResult, stateMods) <- unEffT eff rs ss
+    case eResult of
+      RSuccess (Right a) -> return (RSuccess a, stateMods)
+      RSuccess (Left e)  -> return (RFailure $ embedES index $ f e, stateMods)
+      RFailure es        -> return (RFailure $ es, stateMods)
 {-# INLINE effEitherWith #-}
 
-effEither :: Monad m => EffT c mods es m (Either e a) -> EffT c mods (e : es) m a
+-- | Turn an Either return type into the error list, adding the error type if it is not already in the error list.
+-- The inner monad type needs to be precise due to the way type inference works.
+effEither :: (CheckIfElem e es, Monad m) => EffT c mods es m (Either e a) -> EffT c mods (AddIfNotElem e es) m a
 effEither = effEitherWith id
 {-# INLINE effEither #-}
 
-effMaybeWith :: forall e es m mods c a. Monad m => e -> EffT c mods es m (Maybe a) -> EffT c mods (e : es) m a
-effMaybeWith e eff = EffT $ \rs ss -> do
-  (eResult, stateMods) <- unEffT eff rs ss
-  case eResult of
-    RSuccess (Just a) -> return (RSuccess a, stateMods)
-    RSuccess Nothing  -> return (RFailure $ EHead e, stateMods)
-    RFailure sysE     -> return (RFailure $ ETail sysE, stateMods)
-{-# INLINE effMaybeWith #-}
-
-effMaybeInWith :: (In e es, Monad m) => e -> EffT c mods es m (Maybe a) -> EffT c mods es m a
-effMaybeInWith e eff = EffT $ \rs ss -> do
-  (eResult, stateMods) <- unEffT eff rs ss
-  case eResult of
-    RSuccess (Just a) -> return (RSuccess a, stateMods)
-    RSuccess Nothing  -> return (RFailure $ embedE e, stateMods)
-    RFailure sysE     -> return (RFailure sysE, stateMods)
-{-# INLINE effMaybeInWith #-}
-
-effEitherSystemWith :: (Monad m, In SystemError es) => (e -> SystemError) -> EffT c mods es m (Either e a) -> EffT c mods es m a
-effEitherSystemWith f eff = EffT $ \rs ss -> do
-  (eResult, stateMods) <- unEffT eff rs ss
-  case eResult of
-    RSuccess (Right a) -> return (RSuccess a, stateMods)
-    RSuccess (Left e)  -> return (RFailure $ embedE $ f e, stateMods)
-    RFailure sysE      -> return (RFailure sysE, stateMods)
-{-# INLINE effEitherSystemWith #-}
-
-effEitherSystemException :: (Monad m, In SystemError es, Exception e) => EffT c mods es m (Either e a) -> EffT c mods es m a
-effEitherSystemException = effEitherSystemWith (SystemErrorException . toException)
-{-# INLINE effEitherSystemException #-}
-
+-- | Turn an Either return type into the error list with a function
 effEitherInWith :: (Monad m, In e' es) => (e -> e') -> EffT c mods es m (Either e a) -> EffT c mods es m a
 effEitherInWith f eff = EffT $ \rs ss -> do
   (eResult, stateMods) <- unEffT eff rs ss
@@ -621,6 +478,45 @@ effEitherInWith f eff = EffT $ \rs ss -> do
     RFailure sysE      -> return (RFailure sysE, stateMods)
 {-# INLINE effEitherInWith #-}
 
+-- | Turn an Either return type into the error list
 effEitherIn :: (Monad m, In e es) => EffT c mods es m (Either e a) -> EffT c mods es m a
 effEitherIn = effEitherInWith id
 {-# INLINE effEitherIn #-}
+
+-- | Turn a pure Maybe value into error with the given error type.
+pureMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> Maybe a -> EffT c mods es m a 
+pureMaybeInWith e = effMaybeInWith e . lift . pure
+{-# INLINE pureMaybeInWith #-}
+
+-- | Turn a pure Either value into error with the given error type.
+pureEitherInWith :: forall e' e es m mods c a. (In' c e' es, Monad m) => (e -> e') -> Either e a -> EffT c mods es m a
+pureEitherInWith f = effEitherInWith f . lift . pure
+{-# INLINE pureEitherInWith #-}
+
+-- | Turn an Either return type into the error list, adding the error type if it is not already in the error list.
+-- The inner monad type needs to be precise due to the way type inference works.
+effMaybeWith :: forall e es m mods c a. (CheckIfElem e es, Monad m) => e -> EffT c mods es m (Maybe a) -> EffT c mods (AddIfNotElem e es) m a
+effMaybeWith e eff = case singIfElem @e @es of
+  Left Refl           -> EffT $ \rs ss -> do
+   (eResult, stateMods) <- unEffT eff rs ss
+   case eResult of
+     RSuccess (Just a) -> return (RSuccess a, stateMods)
+     RSuccess Nothing  -> return (RFailure $ EHead e, stateMods)
+     RFailure sysE     -> return (RFailure $ ETail sysE, stateMods)
+  Right (Refl, index) -> EffT $ \rs ss -> do
+    (eResult, stateMods) <- unEffT eff rs ss
+    case eResult of
+      RSuccess (Just a) -> return (RSuccess a, stateMods)
+      RSuccess Nothing  -> return (RFailure $ embedES index e, stateMods)
+      RFailure es       -> return (RFailure $ es, stateMods)
+{-# INLINE effMaybeWith #-}
+
+-- | Turn an Maybe return type into the error list
+effMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> EffT c mods es m (Maybe a) -> EffT c mods es m a 
+effMaybeInWith e eff = EffT $ \rs ss -> do
+  (eResult, stateMods) <- unEffT eff rs ss
+  case eResult of
+    RSuccess (Just a)  -> return (RSuccess a, stateMods)
+    RSuccess (Nothing) -> return (RFailure $ embedE $ e, stateMods)
+    RFailure sysE      -> return (RFailure sysE, stateMods)
+{-# INLINE effMaybeInWith #-}

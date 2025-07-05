@@ -1,5 +1,6 @@
 module Control.Monad.Effect.EventLoop where
 
+import Control.System
 import Control.Monad.Effect
 import Control.Concurrent.STM
 
@@ -20,5 +21,5 @@ eventLoopWithRelease = EffT $ \rs ss -> do
 -- | When restart, the state is reset to the initial state
 eventLoopWithReleaseRestartIO :: forall mods. (ConsFDataList FData mods, System mods) => SystemInitData FData mods -> IO () -- Eff mods NoError ()
 eventLoopWithReleaseRestartIO initData = do
-  _ <- runEffTWithInitData @mods initData eventLoopWithRelease
+  _ <- runSystemWithInitData @mods initData eventLoopWithRelease
   eventLoopWithReleaseRestartIO initData
