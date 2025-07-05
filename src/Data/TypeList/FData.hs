@@ -19,15 +19,15 @@ data instance FData f '[] = FData0
 
 type instance FDataConstraint FData e ts = (FDataByIndex (FirstIndex e ts) ts)
 
-getFData :: forall e ts f. (In e ts, FDataConstraint FData e ts) => FData f ts -> f e
+getFData :: forall e ts f. (InList e ts, FDataConstraint FData e ts) => FData f ts -> f e
 getFData = case proofIndex @e @ts of Refl -> getFDataByIndex (Proxy @(FirstIndex e ts))
 {-# INLINE getFData #-}
 
-modifyFData :: forall e ts f. (In e ts, FDataConstraint FData e ts) => (f e -> f e) -> FData f ts -> FData f ts
+modifyFData :: forall e ts f. (InList e ts, FDataConstraint FData e ts) => (f e -> f e) -> FData f ts -> FData f ts
 modifyFData f = case proofIndex @e @ts of Refl -> modifyFDataByIndex (Proxy @(FirstIndex e ts)) f
 {-# INLINE modifyFData #-}
 
-instance (FDataConstraint FData e es, In e es) => In' FData e es where
+instance (FDataConstraint FData e es, InList e es) => In' FData e es where
   getIn = getFData
   modifyIn = modifyFData
   {-# INLINE getIn #-}
@@ -40,12 +40,11 @@ class FDataByIndex (n :: Nat) (ts :: [Type]) where
 $(generateFDataInstances [1..16])
 
 instance
-  ( flist ~ FData
-  , WhenNonEmpty ts (ConsFDataList flist (Tail ts))
-  , ConsFNil flist
-  , WhenNonEmpty ts (UnConsFData flist ts)
-  , WhenNonEmpty ts (ConsFData0 flist ts)
-  , ConsFData1 flist ts
+  ( WhenNonEmpty ts (ConsFDataList FData (Tail ts))
+  , ConsFNil FData
+  , WhenNonEmpty ts (UnConsFData FData ts)
+  , WhenNonEmpty ts (ConsFData0 FData ts)
+  , ConsFData1 FData ts
   ) => ConsFDataList FData ts 
 
 instance ConsFNil FData where
@@ -95,7 +94,7 @@ $(generateFDataByIndexInstances [(j, i) | i <- [1..16], j <- [0..i-1]])
 --     , fdata5_4 :: !(f t5)
 --     } -> FData f '[t1, t2, t3, t4, t5]
 
--- class In e ts => FDataAccess (e :: Type) (ts :: [Type]) where
+-- class InList e ts => FDataAccess (e :: Type) (ts :: [Type]) where
 --   getFData    :: FData f ts -> f e
 --   modifyFData :: (f e -> f e) -> FData f ts -> FData f ts
 

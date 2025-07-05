@@ -198,7 +198,7 @@ class Monad m => MonadStateful s m where
 
 -- | Instance of 'MonadReadable' for 'RST', allowing queries to be made
 -- on the read environment.
-instance (In a hr, Monad m) => MonadReadable a (RST hr hs m) where
+instance (InList a hr, Monad m) => MonadReadable a (RST hr hs m) where
   query = RST $ RS $ \hr hs -> return (unHBox $ getIn hr, hs)
   {-# INLINE query #-}
   local f (RST (RS g)) = RST $ RS $ \hr hs -> g (modifyIn (liftHBox f) hr) hs >>= \(a, hs') -> return (a, hs')
@@ -206,7 +206,7 @@ instance (In a hr, Monad m) => MonadReadable a (RST hr hs m) where
 
 -- | Instance of 'MonadStateful' for 'RST', allowing state management
 -- within the monad.
-instance (In s hs, Monad m) => MonadStateful s (RST hr hs m) where
+instance (InList s hs, Monad m) => MonadStateful s (RST hr hs m) where
   get   = RST $ RS $ \_ hs -> return (unHBox $ getIn hs, hs)
   {-# INLINE get #-}
   put s = RST $ RS $ \_ hs -> return ((), modifyIn (liftHBox $ const s) hs)
@@ -214,7 +214,7 @@ instance (In s hs, Monad m) => MonadStateful s (RST hr hs m) where
 
 -- | Get the current state, modify it using a function, and return the
 -- original state.
-getModify :: (In s hs, Monad m) => (s -> s) -> RST hr hs m s
+getModify :: (InList s hs, Monad m) => (s -> s) -> RST hr hs m s
 getModify f = do
   s <- get
   put (f s)
@@ -223,7 +223,7 @@ getModify f = do
 
 -- | Get the current state, modify it using a function, and return the
 -- modified state.
-modifyGet :: (In s hs, Monad m) => (s -> s) -> RST hr hs m s
+modifyGet :: (InList s hs, Monad m) => (s -> s) -> RST hr hs m s
 modifyGet f = do
   s <- get
   put (f s)
@@ -317,6 +317,6 @@ fillS' s0 = fmap fst . fillS s0
 --     Right a -> return (Right a, s')
 -- {-# INLINE catchAll #-}
 
--- throwE :: Applicative m => In e es => e -> RSET r s es m a
+-- throwE :: Applicative m => InList e es => e -> RSET r s es m a
 -- throwE e = RSET $ RSE $ \_ s -> pure (Left (embedS e), s)
 -- {-# INLINE throwE #-}

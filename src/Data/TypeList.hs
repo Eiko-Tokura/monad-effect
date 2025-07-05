@@ -21,7 +21,7 @@ import Data.Kind
 import Unsafe.Coerce
 
 -- | A class carrying the proof of the existence of an element in a list. UniqueIn e ts => 
-class In (e :: Type) (es :: [Type]) where
+class InList (e :: Type) (es :: [Type]) where
   singIndex  :: SNat (FirstIndex e es)
   singFirstIndex :: SFirstIndex e es
   proofIndex :: AtIndex es (FirstIndex e es) :~: e
@@ -35,7 +35,7 @@ class In (e :: Type) (es :: [Type]) where
   embedE = embedES (singFirstIndex @e @es)
   {-# INLINE embedE #-}
 
-class (FDataConstraint flist e es, In e es) => In' flist e es where
+class InList e es => In' flist e es where
   getIn :: flist f es -> f e
   default getIn :: (ConsFData flist) => flist f es -> f e
   getIn = getInS (singFirstIndex @e @es)
@@ -47,16 +47,16 @@ class (FDataConstraint flist e es, In e es) => In' flist e es where
   {-# INLINE modifyIn #-}
 
 -- | Axiom
-firstIndexTraverseNotEqElem :: forall e t ts. (NotEq e t, In e ts) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+firstIndexTraverseNotEqElem :: forall e t ts. (NotEq e t, InList e ts) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
 firstIndexTraverseNotEqElem = unsafeCoerce Refl
 {-# INLINE firstIndexTraverseNotEqElem #-}
 
 -- | Axiom
-axiomInImpliesNonEmpty :: In e ts => NonEmpty ts :~: True
+axiomInImpliesNonEmpty :: InList e ts => NonEmpty ts :~: True
 axiomInImpliesNonEmpty = unsafeCoerce Refl
 
--- | Base case for the In class. NotIn e ts => 
-instance In e (e : ts) where
+-- | Base case for the InList class. NotIn e ts => 
+instance InList e (e : ts) where
   singIndex = SZero
   {-# INLINE singIndex #-}
   singFirstIndex = SFirstIndexZero
@@ -72,14 +72,14 @@ instance In e (e : ts) where
     ETail _  -> Nothing
   {-# INLINE getEMaybe #-}
 
-instance (flist ~ FList, FDataConstraint flist e (e : ts), ConsFData flist) => In' FList e (e : ts) where
+instance (flist ~ FList, ConsFData flist) => In' FList e (e : ts) where
   getIn = \(e :** _) -> e
   {-# INLINE getIn #-}
   modifyIn f = \(x :** xs) -> f x :** xs
   {-# INLINE modifyIn #-}
   
--- | Inductive case for the In class. UniqueIn e (t : ts), 
-instance {-# OVERLAPPABLE #-} (NotEq e t, In e ts) => In e (t : ts) where
+-- | InListductive case for the In class. UniqueIn e (t : ts), 
+instance {-# OVERLAPPABLE #-} (NotEq e t, InList e ts) => InList e (t : ts) where
   singIndex = case firstIndexTraverseNotEqElem @e @t @ts of
     Refl -> SSucc (singIndex @e @ts)
   {-# INLINE singIndex #-}
@@ -105,7 +105,7 @@ instance {-# OVERLAPPABLE #-} (flist ~ FList, NonEmpty ts ~ True, FDataConstrain
   modifyIn f = \(x :*** xs) -> x :*** modifyIn f xs
   {-# INLINE modifyIn #-}
 
-instance {-# INCOHERENT #-} In e es => In' FList e es
+instance {-# INCOHERENT #-} InList e es => In' FList e es
 
 class SubList (flist :: (Type -> Type) -> [Type] -> Type) (ys :: [Type]) (xs :: [Type]) where
   getSubListF    ::  flist f xs -> flist f ys -- ^ Get the sublist from the FList.
@@ -137,7 +137,7 @@ instance (In' c y xs, ConsFDataList c (y:ys), SubList c ys xs) => SubList c (y :
     in modifyIn (const hy) $ subListUpdateF xs hys
   {-# INLINE subListModifyF #-}
 
-instance (In y xs, SubListEmbed ys xs) => SubListEmbed (y:ys) xs where
+instance (InList y xs, SubListEmbed ys xs) => SubListEmbed (y:ys) xs where
   subListResultEmbed (RSuccess a)          = RSuccess a
   subListResultEmbed (RFailure (EHead y))  = RFailure (embedE y)
   subListResultEmbed (RFailure (ETail ys)) = subListResultEmbed (RFailure ys)

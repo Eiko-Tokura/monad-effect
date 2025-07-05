@@ -24,7 +24,7 @@ import qualified Control.Monad.State as S
 --
 -- with -O2 -flate-dmd-anal it can optimize to a minimal hand-written fast loop!
 
-testEffStateFPoly :: _ => EffT flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
+testEffStateFPoly :: _ => EffT' flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
 testEffStateFPoly = do
   x <- getS @Int
   modifyS not
@@ -52,7 +52,7 @@ testEffStateAs = asStateT @Int $ S.mapStateT liftIO loop
               loop
             else return ()
 
-testEffEmbed :: _ => EffT flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
+testEffEmbed :: _ => EffT' flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
 testEffEmbed = do
   x <- embedMods @'[SModule Int] $ do
     x <- getS @Int

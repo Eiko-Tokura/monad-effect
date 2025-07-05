@@ -12,13 +12,13 @@ import qualified Data.Text as T
 -- it's algebraic, performant, make sense, without sacrificing purity
 
 -- | Wraps your effectul routine into EffT monad transformer
-myLookup :: (Show k, Ord k, Monad m) => k -> EffT FData '[SModule (M.Map k v)] '[ErrorText "Map.keyNotFound"] m v
+myLookup :: (Show k, Ord k, Monad m) => k -> EffT '[SModule (M.Map k v)] '[ErrorText "Map.keyNotFound"] m v
 myLookup k
   = effMaybeInWith (ErrorText @"Map.keyNotFound" $ " where key = " <> T.show k) -- wraps Maybe into an exception
   $ getsS (M.lookup k) -- this just returns a monadic value of type `Maybe v`
 
 -- | This effect can run in pure monads! like Identity
-lookups :: forall v m. (Monad m) => EffT FData '[SModule (M.Map T.Text v)] '[ErrorText "Map.keyNotFound"] m (v, v, v)
+lookups :: forall v m. (Monad m) => EffT '[SModule (M.Map T.Text v)] '[ErrorText "Map.keyNotFound"] m (v, v, v)
 lookups = do
   foo <- myLookup "foo"  -- this will throw an exception if "foo" is not found
   bar <- myLookup "bar"  -- instead of Nothing, you get an algebraic exception `ErrorText "Map.keyNotFound"` explaining what went wrong
