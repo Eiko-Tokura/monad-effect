@@ -9,7 +9,7 @@ import Data.TypeList.FData
 import Module.RS
 import qualified Control.Monad.State as S
 
--- The test result shows that there is around (k+1) ns overhead for fetching the k-th state inside the effect system
+-- The test result shows that for FList there is around (k+1) ns overhead for fetching the k-th state inside the effect system
 -- for typical applications with 8 modules,
 -- the expected monad access & bind is around 5 ns, which is around 200000000 access & binds per second.
 --
@@ -17,6 +17,12 @@ import qualified Control.Monad.State as S
 --
 -- But of course, in a very very tight loop, you should avoid using Eff, use a single layer of StateT or
 -- embed your computation as pure functions.
+--
+--
+-- For FData, the overhead can be eliminated and GHC optimize it very very well
+-- even without any optimizations, the speed is 10 times faster than FList
+--
+-- with -O2 -flate-dmd-anal it can optimize to a minimal hand-written fast loop!
 
 testEffStateFPoly :: _ => EffT flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
 testEffStateFPoly = do
