@@ -4,16 +4,10 @@ module Data.TypeList.ConsFData where
 
 import Data.TypeList.Families
 import Data.Type.Equality
-import Data.Kind (Type, Constraint)
+import Data.Kind (Type)
 
 class ConsFNil (flist :: (Type -> Type) -> [Type] -> Type) where
   fNil  :: flist f '[]
-
-type family When (b :: Bool) (c :: Constraint) :: Constraint where
-  When False c = ()
-  When True c = c
-
-type WhenNonEmpty ts c = When (NonEmpty ts) c
 
 class When (NonEmpty (Tail ts)) (UnConsFData flist (Tail ts)) => UnConsFData flist ts where
   unConsFData :: flist f ts -> (f (Head ts), flist f (Tail ts))
@@ -69,15 +63,7 @@ infixr 1 :***
 getE :: ConsFData flist => Elem e l -> flist f l -> f e
 getE  EZ    = \(x :** _)  -> x
 getE (ES n) = \(_ :** xs) -> getE n xs
-{-# INLINE getE #-}
 
 putE :: ConsFData flist => Elem e l -> f e -> flist f l -> flist f l
 putE EZ     x' (_ :** xs) = x' :** xs
 putE (ES n) y' (x :** xs) = x :** putE n y' xs
-
--- | Get the sublist in the HList using the proof.
-getSub :: ConsFData flist => SSub ys xs -> flist f xs -> flist f ys
-getSub SubZ _        = fNil
-getSub (SubS e t) xs = getE e xs :** getSub t xs
-{-# INLINE getSub #-}
-

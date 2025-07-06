@@ -46,7 +46,7 @@ type SystemInitDataHardCodeL   mods = SystemInitDataHardCode' FList mods
 -- | Run a System of EffT' given initData
 --
 -- If error happens at initialization, it will return Left SystemError
--- If error happens during normal flow, it will return Right (Left (SList (SystemError : es)))
+-- If error happens during normal flow, it will return Right (RFailure SystemError)
 runSystemWithInitData :: forall mods es m c a. (ConsFDataList c mods, System c mods, MonadIO m)
   => SystemInitData c mods
   -> EffT' c mods es m a

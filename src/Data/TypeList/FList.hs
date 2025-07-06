@@ -9,7 +9,7 @@ import Data.TypeList.Families
 
 -- | A type-level list applied to a type-level function, representing a product.
 -- It has a strict head and tail.
--- the ! bang pattern here is to make it strict because it might cause trouble when putting in a stateful monad. Alternatively we can also write a strict version FList, SFList.
+-- the ! bang pattern here is to make it strict because it might cause trouble when putting in a stateful monad.
 data FList (f :: Type -> Type) (ts :: [Type]) where
   FNil  :: FList f '[]
   FCons :: !(f t) -> !(FList f ts) -> FList f (t : ts)

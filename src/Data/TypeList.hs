@@ -20,12 +20,12 @@ import Data.Result
 import Data.Kind
 import Unsafe.Coerce
 
--- | A class carrying the proof of the existence of an element in a list. UniqueIn e ts => 
+-- | A class carrying the proof of the existence of an element in a list.
 class InList (e :: Type) (es :: [Type]) where
-  singIndex  :: SNat (FirstIndex e es)
+  singIndex      :: SNat (FirstIndex e es)
   singFirstIndex :: SFirstIndex e es
-  proofIndex :: AtIndex es (FirstIndex e es) :~: e
-  elemIndex  :: Elem e es
+  proofIndex     :: AtIndex es (FirstIndex e es) :~: e
+  elemIndex      :: Elem e es
 
   getEMaybe :: EList es -> Maybe e
   getEMaybe = getEMaybeS (singFirstIndex @e @es)
@@ -54,6 +54,7 @@ firstIndexTraverseNotEqElem = unsafeCoerce Refl
 -- | Axiom
 axiomInImpliesNonEmpty :: InList e ts => NonEmpty ts :~: True
 axiomInImpliesNonEmpty = unsafeCoerce Refl
+{-# INLINE axiomInImpliesNonEmpty #-}
 
 -- | Base case for the InList class. NotIn e ts => 
 instance InList e (e : ts) where
@@ -72,7 +73,7 @@ instance InList e (e : ts) where
     ETail _  -> Nothing
   {-# INLINE getEMaybe #-}
 
-instance (flist ~ FList, ConsFData flist) => In' FList e (e : ts) where
+instance In' FList e (e : ts) where
   getIn = \(e :** _) -> e
   {-# INLINE getIn #-}
   modifyIn f = \(x :** xs) -> f x :** xs
@@ -128,6 +129,12 @@ instance SubListEmbed '[] xs where
   subListResultEmbed (RSuccess a) = RSuccess a
   {-# INLINE subListResultEmbed #-}
 
+instance (InList y xs, SubListEmbed ys xs) => SubListEmbed (y:ys) xs where
+  subListResultEmbed (RSuccess a)          = RSuccess a
+  subListResultEmbed (RFailure (EHead y))  = RFailure (embedE y)
+  subListResultEmbed (RFailure (ETail ys)) = subListResultEmbed (RFailure ys)
+  {-# INLINE subListResultEmbed #-}
+
 -- | Induction case for the SubList class.
 instance (In' c y xs, ConsFDataList c (y:ys), SubList c ys xs) => SubList c (y : ys) xs where
   getSubListF xs = consF0 (getIn xs) (getSubListF xs)
@@ -136,12 +143,6 @@ instance (In' c y xs, ConsFDataList c (y:ys), SubList c ys xs) => SubList c (y :
     let hy :*** hys = f (getSubListF xs)
     in modifyIn (const hy) $ subListUpdateF xs hys
   {-# INLINE subListModifyF #-}
-
-instance (InList y xs, SubListEmbed ys xs) => SubListEmbed (y:ys) xs where
-  subListResultEmbed (RSuccess a)          = RSuccess a
-  subListResultEmbed (RFailure (EHead y))  = RFailure (embedE y)
-  subListResultEmbed (RFailure (ETail ys)) = subListResultEmbed (RFailure ys)
-  {-# INLINE subListResultEmbed #-}
 
 instance {-# INCOHERENT #-} ConsFDataList c (x:xs) => SubList c xs (x:xs) where
   getSubListF (_ :*** xs) = xs

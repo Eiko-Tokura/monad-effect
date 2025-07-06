@@ -17,27 +17,19 @@ import Data.Proxy
 data family FData (f :: Type -> Type) (ts :: [Type]) :: Type
 data instance FData f '[] = FData0
 
+$(generateFDataInstances [1..16])
+
 type instance FDataConstraint FData e ts = (FDataByIndex (FirstIndex e ts) ts)
 
-getFData :: forall e ts f. (InList e ts, FDataConstraint FData e ts) => FData f ts -> f e
-getFData = case proofIndex @e @ts of Refl -> getFDataByIndex (Proxy @(FirstIndex e ts))
-{-# INLINE getFData #-}
-
-modifyFData :: forall e ts f. (InList e ts, FDataConstraint FData e ts) => (f e -> f e) -> FData f ts -> FData f ts
-modifyFData f = case proofIndex @e @ts of Refl -> modifyFDataByIndex (Proxy @(FirstIndex e ts)) f
-{-# INLINE modifyFData #-}
-
 instance (FDataConstraint FData e es, InList e es) => In' FData e es where
-  getIn = getFData
-  modifyIn = modifyFData
+  getIn      = case proofIndex @e @es of Refl -> getFDataByIndex    (Proxy @(FirstIndex e es))
+  modifyIn f = case proofIndex @e @es of Refl -> modifyFDataByIndex (Proxy @(FirstIndex e es)) f
   {-# INLINE getIn #-}
   {-# INLINE modifyIn #-}
 
 class FDataByIndex (n :: Nat) (ts :: [Type]) where
   getFDataByIndex    :: Proxy n -> FData f ts -> f (AtIndex ts n)
   modifyFDataByIndex :: Proxy n -> (f (AtIndex ts n) -> f (AtIndex ts n)) -> FData f ts -> FData f ts
-
-$(generateFDataInstances [1..16])
 
 instance
   ( WhenNonEmpty ts (ConsFDataList FData (Tail ts))

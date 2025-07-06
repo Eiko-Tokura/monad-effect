@@ -3,7 +3,6 @@
 module Data.TypeList.Families where
 
 import Data.Kind (Type, Constraint)
-import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
 import GHC.TypeError
 import Unsafe.Coerce (unsafeCoerce)
@@ -29,17 +28,6 @@ data Elem e l where
   EZ :: Elem x (x : xs)              -- ^ Base case: the element is the head of the list.
   ES :: Elem x ys -> Elem x (y : ys) -- ^ Inductive case: the element is in the tail of the list.
 
--- | ts - sub = rs
-data Subtract (ts :: [Type]) (sub :: [Type]) (rs :: [Type]) where
-  SubNil   :: Subtract ts '[] ts
-  SubAddAC :: Proxy t -> Subtract as bs cs -> Subtract (t : as) bs (t : cs)
-
--- | A data-level proof of the existence of a sublist in a list.
---
-data SSub (ys :: [Type]) (xs :: [Type]) where
-  SubZ :: SSub '[] xs                              -- ^ Base case: the empty sublist.
-  SubS :: Elem y xs -> SSub ys xs -> SSub (y:ys) xs -- ^ Inductive case: the head element is in the list.
-
 -- | A type-level function that concatenates two type-level lists.
 type family (xs :: [Type]) ++ (ys :: [Type]) :: [Type] where
   '[] ++ bs = bs
@@ -48,6 +36,11 @@ type family (xs :: [Type]) ++ (ys :: [Type]) :: [Type] where
 type family IfBool (b :: Bool) (t :: k) (e :: k) where
   IfBool 'True  a _ = a
   IfBool 'False _ b = b
+
+type family When (b :: Bool) (c :: Constraint) :: Constraint where
+  When bool c = IfBool bool c (() :: Constraint)
+
+type WhenNonEmpty ts c = When (NonEmpty ts) c
 
 type family AddIfNotElem (a :: Type) (bs :: [Type]) :: [Type] where
   AddIfNotElem a bs = IfBool (ElemIn a bs) bs (a ': bs)
@@ -66,6 +59,7 @@ instance CheckIfElem a (a ': xs) where
 -- | Axiom, validity relies only on the instance resolution
 axiomNotEqElem :: (NotEq a b) => ElemIn a bs :~: bool -> ElemIn a (b : bs) :~: bool
 axiomNotEqElem _ = unsafeCoerce Refl
+{-# INLINE axiomNotEqElem #-}
 
 -- | Axiom, validity relies only on the instance resolution
 firstIndexTraverseNotEqElemIn :: forall e t ts. (NotEq e t, ElemIn e ts ~ True) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
@@ -83,6 +77,7 @@ instance {-# OVERLAPPABLE #-} (NotEq a b, CheckIfElem a bs) => CheckIfElem a (b 
     Right (r@Refl, SFirstIndexSucc Refl i) -> case axiomNotEqElem @a @b @bs r of
       Refl -> case firstIndexTraverseNotEqElemIn @a @b @bs of
         Refl -> Right (Refl, SFirstIndexSucc Refl (SFirstIndexSucc Refl i))
+  {-# INLINE singIfElem #-}
 
 type family ElemIn (a :: Type) (bs :: [Type]) :: Bool where
   ElemIn a '[]       = 'False
@@ -127,8 +122,6 @@ type family FirstIndex (e :: Type) (ts :: [Type]) :: Nat where
   FirstIndex e (t ': ts) = 'Succ (FirstIndex e ts)
   FirstIndex e '[] = TypeError ('Text "Error evaluating Index: Type " ':<>: 'ShowType e ':<>: 'Text " is not in the list")
 
-type family BindMaybe (ma :: Maybe a) (kleiB :: a -> Maybe b) :: Maybe b
-
 -- | due to unsaturated type family not implemented yet, please note that arr can only be data / data family
 type family FmapMaybe (arr :: a -> b) (ma :: Maybe a) :: Maybe b where 
   FmapMaybe _   'Nothing  = 'Nothing
@@ -151,22 +144,5 @@ singFirstIndexToSNat :: SFirstIndex e ts -> SNat (FirstIndex e ts)
 singFirstIndexToSNat SFirstIndexZero          = SZero
 singFirstIndexToSNat (SFirstIndexSucc Refl s) = SSucc (singFirstIndexToSNat s)
 {-# INLINE singFirstIndexToSNat #-}
-
-data Sing t = Sing
-
-data SingList (ts :: [Type]) where
-  SNil  :: SingList '[]
-  SCons :: Sing t -> SingList ts -> SingList (t : ts)
-
-class ListSing (ts :: [Type]) where
-  singList :: SingList ts
-
-instance ListSing '[] where
-  singList = SNil
-  {-# INLINE singList #-}
-
-instance ListSing ts => ListSing (t : ts) where
-  singList = SCons Sing singList
-  {-# INLINE singList #-}
 
 type family FDataConstraint (flist :: (Type -> Type) -> [Type] -> Type) (e :: Type) (es :: [Type]) :: Constraint

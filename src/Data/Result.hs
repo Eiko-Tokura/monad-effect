@@ -1,5 +1,10 @@
 -- | Module      : Data.Result
 -- Description : A module that provides a Result type for handling errors in a non-empty list of types.
+--
+-- This module defines a non-empty sum type `EList` parametrized by a list of types,
+-- and a `Result es a` type that can either represent a successful computation or a failure in one of the types in the list.
+-- 
+-- When es is [], it is equivalent to a, there is no redundant constructors or pattern matching.
 module Data.Result where
 
 import Data.Kind (Type)
