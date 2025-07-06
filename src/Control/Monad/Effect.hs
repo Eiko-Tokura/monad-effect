@@ -16,6 +16,7 @@ module Control.Monad.Effect
   , effEitherIn, effEitherInWith
   , effMaybeWith, effMaybeInWith
   , pureMaybeInWith, pureEitherInWith
+  , baseEitherIn, baseEitherInWith, baseMaybeInWith
   , errorToEither, errorToEitherAll
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
   , effEitherSystemException
@@ -229,17 +230,17 @@ runEffTNoError rs ss = fmap (first resultNoError) . runEffT rs ss
 {-# INLINE runEffTNoError #-}
 
 -- | runs the EffT' with no modules
-runEffT0 :: ConsFNil c => EffT' c '[] es IO a -> IO (Result es a)
+runEffT0 :: (Monad m, ConsFNil c) => EffT' c '[] es m a -> m (Result es a)
 runEffT0 = fmap fst . runEffT fNil fNil
 {-# INLINE runEffT0 #-}
 
 -- | runs the EffT' with no modules and a single possible error type, return as classic Either type
-runEffT01 :: ConsFNil c => EffT' c '[] '[e] IO a -> IO (Either e a)
+runEffT01 :: (Monad m, ConsFNil c) => EffT' c '[] '[e] m a -> m (Either e a)
 runEffT01 = fmap (first fromElistSingleton . resultToEither) . runEffT0
 {-# INLINE runEffT01 #-}
 
 -- | runs the EffT' with no modules and no error
-runEffT00 :: ConsFNil c => EffT' c '[] NoError IO a -> IO a
+runEffT00 :: (Monad m, ConsFNil c) => EffT' c '[] NoError m a -> m a
 runEffT00 = fmap resultNoError . runEffT0
 {-# INLINE runEffT00 #-}
 
@@ -492,6 +493,16 @@ effEither :: (CheckIfElem e es, Monad m) => EffT' c mods es m (Either e a) -> Ef
 effEither = effEitherWith id
 {-# INLINE effEither #-}
 
+-- | Lift an Either return type in the base monad into EffT
+baseEitherIn :: (Monad m, InList e es) => m (Either e a) -> EffT' c mods es m a
+baseEitherIn = effEitherIn . lift
+{-# INLINE baseEitherIn #-}
+
+-- | Lift an Either return type in the base monad into EffT with the given function
+baseEitherInWith :: (Monad m, InList e' es) => (e -> e') -> m (Either e a) -> EffT' c mods es m a
+baseEitherInWith f = effEitherInWith f . lift
+{-# INLINE baseEitherInWith #-}
+
 -- | Turn an Either return type into the error list with a function
 effEitherInWith :: (Monad m, InList e' es) => (e -> e') -> EffT' c mods es m (Either e a) -> EffT' c mods es m a
 effEitherInWith f eff = EffT' $ \rs ss -> do
@@ -511,6 +522,11 @@ effEitherIn = effEitherInWith id
 pureMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> Maybe a -> EffT' c mods es m a 
 pureMaybeInWith e = effMaybeInWith e . lift . pure
 {-# INLINE pureMaybeInWith #-}
+
+-- | Lift a Maybe return type in the base monad into EffT with the given error type.
+baseMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> m (Maybe a) -> EffT' c mods es m a
+baseMaybeInWith f = effMaybeInWith f . lift
+{-# INLINE baseMaybeInWith #-}
 
 -- | Turn a pure Either value into error with the given error type.
 pureEitherInWith :: forall e' e es m mods c a. (In' c e' es, Monad m) => (e -> e') -> Either e a -> EffT' c mods es m a

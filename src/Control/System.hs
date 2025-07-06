@@ -35,6 +35,8 @@ type family DependencyW (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Const
   DependencyW mod '[] mods = mod `In` (mod : mods)
   DependencyW mod (dep ': deps) mods = (dep `In` mods, dep `In` (mod : mods), DependencyW mod deps mods)
 
+-- | A type family that can be used to generate the constraints
+-- to make specifying module dependencies easier
 type family Dependency (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
   Dependency mod deps mods = (ConsFDataList FData (mod : mods), DependencyW mod deps mods)
 
