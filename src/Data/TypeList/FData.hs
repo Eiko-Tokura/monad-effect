@@ -1,4 +1,4 @@
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances, DeriveAnyClass #-}
 -- | The `FData` type family is a fast replacement for `FList`, the heterogeneous list.
 -- it builds a data structure using data family instead of GADT, which is very efficient
 --
@@ -8,6 +8,8 @@ module Data.TypeList.FData
   , module Data.TypeList
   ) where
 
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData(..))
 import Data.TypeList
 import Data.TypeList.FData.TH
 import Data.Kind (Type)

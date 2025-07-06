@@ -45,7 +45,9 @@ generateFDataInstance n = do
            instHead
            Nothing         -- Kind signature*
            [con]
-           []              -- No deriving clauses
+           [DerivClause (Just StockStrategy) $ ConT <$> [mkName "Generic"]
+           ,DerivClause (Just AnyclassStrategy) $ ConT <$> [mkName "NFData"]
+           ]              -- No deriving clauses
 
 generateFDataInstances :: [Int] -> Q [Dec]
 generateFDataInstances = mapM generateFDataInstance

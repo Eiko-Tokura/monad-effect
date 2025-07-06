@@ -1,0 +1,211 @@
+{-# LANGUAGE CPP, PartialTypeSignatures #-}
+
+-- SPDX-License-Identifier: BSD-3-Clause
+-- (c) 2022 Xy Ren; 2024 Sayo contributors
+
+-- Benchmarking effect invocation and monadic bind
+module BenchCountdown where
+
+import Control.Monad.Effect as ME
+import Module.RS as ME
+import Data.TypeList.FData as ME
+
+import Control.Carrier.Reader qualified as F
+import Control.Carrier.State.Strict qualified as F
+#ifdef VERSION_freer_simple
+import Control.Monad.Freer qualified as FS
+import Control.Monad.Freer.Reader qualified as FS
+import Control.Monad.Freer.State qualified as FS
+#endif
+import Control.Monad.Hefty qualified as H
+import Control.Monad.Hefty.Reader qualified as H
+import Control.Monad.Hefty.State qualified as H
+import Control.Monad.Identity qualified as M
+import Control.Monad.Reader qualified as M
+import Control.Monad.State.Strict qualified as M
+import Effectful qualified as EL
+import Effectful.Reader.Dynamic qualified as EL
+import Effectful.State.Dynamic qualified as EL
+import Polysemy qualified as P
+import Polysemy.Reader qualified as P
+import Polysemy.State qualified as P
+#ifdef VERSION_eff
+import "eff" Control.Effect qualified as EF
+#endif
+
+programMonadEffect :: ME.EffT '[ME.SModule Int] ME.NoError ME.Identity Int
+programMonadEffect = do
+    x <- ME.getS @Int
+    if x == 0
+        then pure x
+        else do
+            ME.putS (x - 1)
+            programMonadEffect
+{-# NOINLINE programMonadEffect #-}
+-- Comment: ^ this NOINLINE is USELESS because it's a recursive function
+-- but the original author put them anyway, so I kept it.
+
+programMonadEffectDeep :: ME.EffT 
+  [ ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
+  , ME.SModule Int
+  , ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
+  ] ME.NoError ME.Identity Int
+programMonadEffectDeep = do
+    x <- ME.getS @Int
+    if x == 0
+        then pure x
+        else do
+            ME.putS (x - 1)
+            programMonadEffectDeep
+{-# NOINLINE programMonadEffectDeep #-}
+
+countdownMonadEffect :: Int -> (Int, _)
+countdownMonadEffect n =
+    ME.runIdentity $ ME.runEffTNoError (ME.FData1 ME.SRead) (ME.FData1 $ ME.SState n) $ programMonadEffect
+
+countdownMonadEffectDeep :: Int -> (Int, _)
+countdownMonadEffectDeep n = ME.runIdentity $
+    ME.runEffTNoError
+      (ME.FData11 readUnit readUnit readUnit readUnit readUnit SRead readUnit readUnit readUnit readUnit readUnit)
+      (ME.FData11 rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit (ME.SState n) rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit)
+        $ programMonadEffectDeep
+      where readUnit = ME.RRead ()
+            rStateUnit = ME.RState
+
+programHeftia :: (H.State Int H.:> es) => H.Eff es Int
+programHeftia = do
+    x <- H.get @Int
+    if x == 0
+        then pure x
+        else do
+            H.put (x - 1)
+            programHeftia
+{-# NOINLINE programHeftia #-}
+
+countdownHeftia :: Int -> (Int, Int)
+countdownHeftia n = H.runPure $ H.runState n programHeftia
+
+countdownHeftiaDeep :: Int -> (Int, Int)
+countdownHeftiaDeep n = H.runPure $ hrunR $ hrunR $ hrunR $ hrunR $ hrunR $ H.runState n $ hrunR $ hrunR $ hrunR $ hrunR $ hrunR $ programHeftia
+
+countdownHeftiaNaive :: Int -> (Int, Int)
+countdownHeftiaNaive n = H.runPure $ H.runStateNaive n programHeftia
+
+countdownHeftiaNaiveDeep :: Int -> (Int, Int)
+countdownHeftiaNaiveDeep n = H.runPure $ hrunR $ hrunR $ hrunR $ hrunR $ hrunR $ H.runStateNaive n $ hrunR $ hrunR $ hrunR $ hrunR $ hrunR $ programHeftia
+
+hrunR :: H.Eff (H.Ask () ': es) a -> H.Eff es a
+hrunR = H.runAsk ()
+
+#ifdef VERSION_freer_simple
+programFreer :: (FS.Member (FS.State Int) es) => FS.Eff es Int
+programFreer = do
+    x <- FS.get @Int
+    if x == 0
+        then pure x
+        else do
+            FS.put (x - 1)
+            programFreer
+{-# NOINLINE programFreer #-}
+
+countdownFreer :: Int -> (Int, Int)
+countdownFreer n = FS.run $ FS.runState n programFreer
+
+countdownFreerDeep :: Int -> (Int, Int)
+countdownFreerDeep n = FS.run $ runR $ runR $ runR $ runR $ runR $ FS.runState n $ runR $ runR $ runR $ runR $ runR $ programFreer
+  where
+    runR = FS.runReader ()
+#endif
+
+programSem :: (P.Member (P.State Int) es) => P.Sem es Int
+programSem = do
+    x <- P.get @Int
+    if x == 0
+        then pure x
+        else do
+            P.put (x - 1)
+            programSem
+{-# NOINLINE programSem #-}
+
+countdownSem :: Int -> (Int, Int)
+countdownSem n = P.run $ P.runState n programSem
+
+countdownSemDeep :: Int -> (Int, Int)
+countdownSemDeep n = P.run $ runR $ runR $ runR $ runR $ runR $ P.runState n $ runR $ runR $ runR $ runR $ runR $ programSem
+  where
+    runR = P.runReader ()
+
+programFused :: (F.Has (F.State Int) sig m) => m Int
+programFused = do
+    x <- F.get @Int
+    if x == 0
+        then pure x
+        else do
+            F.put (x - 1)
+            programFused
+{-# NOINLINE programFused #-}
+
+countdownFused :: Int -> (Int, Int)
+countdownFused n = F.run $ F.runState n programFused
+
+countdownFusedDeep :: Int -> (Int, Int)
+countdownFusedDeep n = F.run $ runR $ runR $ runR $ runR $ runR $ F.runState n $ runR $ runR $ runR $ runR $ runR $ programFused
+  where
+    runR = F.runReader ()
+
+programEffectful :: (EL.State Int EL.:> es) => EL.Eff es Int
+programEffectful = do
+    x <- EL.get @Int
+    if x == 0
+        then pure x
+        else do
+            EL.put (x - 1)
+            programEffectful
+{-# NOINLINE programEffectful #-}
+
+countdownEffectful :: Int -> (Int, Int)
+countdownEffectful n = EL.runPureEff $ EL.runStateLocal n programEffectful
+
+countdownEffectfulDeep :: Int -> (Int, Int)
+countdownEffectfulDeep n =
+    EL.runPureEff $ runR $ runR $ runR $ runR $ runR $ EL.runStateLocal n $ runR $ runR $ runR $ runR $ runR $ programEffectful
+  where
+    runR = EL.runReader ()
+
+#ifdef VERSION_eff
+programEff :: (EF.State Int EF.:< es) => EF.Eff es Int
+programEff = do
+    x <- EF.get @Int
+    if x == 0
+        then pure x
+        else do
+            EF.put (x - 1)
+            programEff
+{-# NOINLINE programEff #-}
+
+countdownEff :: Int -> (Int, Int)
+countdownEff n = EF.run $ EF.runState n programEff
+
+countdownEffDeep :: Int -> (Int, Int)
+countdownEffDeep n = EF.run $ runR $ runR $ runR $ runR $ runR $ EF.runState n $ runR $ runR $ runR $ runR $ runR $ programEff
+  where
+    runR = EF.runReader ()
+#endif
+
+programMtl :: (M.MonadState Int m) => m Int
+programMtl = do
+    x <- M.get @Int
+    if x == 0
+        then pure x
+        else do
+            M.put (x - 1)
+            programMtl
+{-# NOINLINE programMtl #-}
+
+countdownMtl :: Int -> (Int, Int)
+countdownMtl = M.runState programMtl
+
+countdownMtlDeep :: Int -> (Int, Int)
+countdownMtlDeep n = M.runIdentity $ runR $ runR $ runR $ runR $ runR $ M.runStateT (runR $ runR $ runR $ runR $ runR $ programMtl) n
+  where
+    runR = (`M.runReaderT` ())

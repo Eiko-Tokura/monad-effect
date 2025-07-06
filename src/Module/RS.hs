@@ -3,6 +3,9 @@
 -- it can be used in the EffT monad transformer
 module Module.RS where
 
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
+
 import Control.Monad.Effect
 import Data.Kind
 import Data.TypeList
@@ -16,7 +19,7 @@ data RModule (r :: Type)
 instance Module (RModule r) where
   newtype ModuleInitData (RModule r) = RInitData { rInitRead :: r }
   newtype ModuleRead  (RModule r)    = RRead { rRead :: r }
-  data    ModuleState (RModule r)    = RState
+  data    ModuleState (RModule r)    = RState deriving (Generic, NFData)
   data    ModuleEvent (RModule r)    = REvent
 
 -- | A reader module that has a name
@@ -25,7 +28,7 @@ data RNamed (name :: Symbol) (r :: Type)
 instance Module (RNamed name r) where
   newtype ModuleInitData (RNamed name r) = RNamedInitData { rNamedInitRead :: r }
   newtype ModuleRead  (RNamed name r)    = RNamedRead { rNamedRead :: r }
-  data    ModuleState (RNamed name r)    = RNamedState
+  data    ModuleState (RNamed name r)    = RNamedState deriving (Generic, NFData)
   data    ModuleEvent (RNamed name r)    = RNamedEvent
 
 -- | A module that provides state functionality
@@ -34,7 +37,7 @@ data SModule (s :: Type)
 instance Module (SModule s) where
   newtype ModuleInitData (SModule s) = SInitData { sInitState :: s }
   data    ModuleRead  (SModule s)    = SRead
-  newtype ModuleState (SModule s)    = SState { sState :: s }
+  newtype ModuleState (SModule s)    = SState { sState :: s } deriving newtype (Generic, NFData)
   data    ModuleEvent (SModule s)    = SEvent
 
 -- | A state module that has a name
@@ -42,7 +45,7 @@ data SNamed (name :: Symbol) (s :: Type)
 instance Module (SNamed name s) where
   newtype ModuleInitData (SNamed name s) = SNamedInitData { sNamedInitState :: s }
   data    ModuleRead  (SNamed name s)    = SNamedRead
-  newtype ModuleState (SNamed name s)    = SNamedState { sNamedState :: s }
+  newtype ModuleState (SNamed name s)    = SNamedState { sNamedState :: s } deriving newtype (Generic, NFData)
   data    ModuleEvent (SNamed name s)    = SNamedEvent
 
 embedStateT :: forall s mods errs m c a. (Monad m, In' c (SModule s) mods) => S.StateT s (EffT' c mods errs m) a -> EffT' c mods errs m a

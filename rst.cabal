@@ -52,7 +52,7 @@ extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common warnings
-    ghc-options: -Wall -threaded -finfo-table-map -fdistinct-constructor-tables -j8 -fexpose-all-unfoldings
+    ghc-options: -Wall -j8
 
 library
     -- Import common warning flags.
@@ -90,6 +90,7 @@ library
                     , monad-control
                     , fusion-plugin-types
                     , template-haskell
+                    , deepseq
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -99,6 +100,7 @@ library
 
     default-extensions: OverloadedStrings
                       , DerivingStrategies
+                      , DeriveAnyClass
                       , DerivingVia
                       , DataKinds
                       , GADTs
@@ -147,3 +149,63 @@ test-suite rst-test
       , text
       , mtl
       , fusion-plugin
+
+benchmark rst-bench
+    -- Import common warning flags.
+    import:           warnings
+
+    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -fconstraint-solver-iterations=16 -O0
+    -- -flate-dmd-anal
+
+    -- Base language which the package is written in.
+    default-language: GHC2021
+
+    -- LANGUAGE extensions used by modules in this package.
+    default-extensions: OverloadedStrings
+                      , DerivingStrategies
+                      , DerivingVia
+                      , DataKinds
+                      , GADTs
+                      , LambdaCase
+                      , TypeFamilies
+                      , TypeApplications
+                      , TemplateHaskell
+                      , PackageImports
+                      , BlockArguments
+
+    -- The interface type and version of the benchmark suite.
+    type:             exitcode-stdio-1.0
+
+    -- Directories containing source files.
+    hs-source-dirs:   bench
+
+    -- The entrypoint to the benchmark suite.
+    main-is:          Main.hs
+
+
+    build-depends: heftia-effects
+                 , polysemy ^>= 1.9
+                 , fused-effects ^>= 1.1
+                 , effectful >= 2.3 && < 2.6
+                 , mtl >= 2.2 && < 2.4
+                 , logict >= 0.7.0.3 && < 0.9
+                 , tasty-bench >= 0.3 && < 0.5
+                 , unix
+                 , rst
+                 , base
+                 , text
+                 , data-effects
+
+    if impl(ghc >= 9.6) && impl(ghc < 9.10)
+       build-depends: eff
+
+    if impl(ghc < 9.10)
+       build-depends: freer-simple ^>= 1.2
+
+    other-modules:
+         BenchCountdown
+         BenchCatch
+         BenchLocal
+         BenchCoroutine
+         BenchPyth
+         BenchFileSizes
