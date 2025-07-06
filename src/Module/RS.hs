@@ -6,7 +6,7 @@ module Module.RS where
 import Control.Monad.Effect
 import Data.Kind
 import Data.TypeList
-import Data.Bifunctor (first, second)
+import Data.Bifunctor (second)
 import GHC.TypeLits
 import qualified Control.Monad.State as S
 
@@ -91,9 +91,9 @@ runRModuleIn r = runEffTIn_ (RRead r) RState
 {-# INLINE runRModuleIn #-}
 
 -- | Warning: state will lose when you have an error
-runSModule :: (ConsFDataList c (SModule s : mods), Monad m) => s -> EffT' c (SModule s : mods) errs m a -> EffT' c mods errs m (s, a)
+runSModule :: (ConsFDataList c (SModule s : mods), Monad m) => s -> EffT' c (SModule s : mods) errs m a -> EffT' c mods errs m (a, s)
 runSModule s
-  = fmap (first $ \(SState s') -> s')
+  = fmap (second $ \(SState s') -> s')
   . runEffTOuter SRead (SState s)
 {-# INLINE runSModule #-}
 

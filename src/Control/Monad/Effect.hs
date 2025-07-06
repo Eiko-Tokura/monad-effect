@@ -175,7 +175,7 @@ instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadThro
   {-# INLINE throwM #-}
 
 -- | this can only catch MonadThrowError, other errors are algebraic and should be caught by effCatch, effCatchIn, effCatchAll
-instance (Monad m, ConsFDataList c mods, In' c MonadThrowError es) => MonadCatch (EffT' c mods es m) where
+instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatch (EffT' c mods es m) where
   catch ma handler = effCatchIn' ma $ \(MonadThrowError e) ->
     case fromException e of
       Just e' -> handler e'
@@ -247,18 +247,15 @@ runEffT00 = fmap resultNoError . runEffT0
 --
 -- Warning: `ModuleState mod` will be lost when the outer EffT' returns an exception
 runEffTOuter :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
-  => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m (ModuleState mod, a)
-runEffTOuter mread mstate eff = EffT'
-  $ \modsRead modsState ->
-    (\(ea, (s :*** ss)) -> ((s,) <$> ea, ss)) <$> (unEffT' @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
+  => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m (a, ModuleState mod)
+runEffTOuter mread mstate eff = EffT' $ \modsRead modsState ->
+    (\(ea, (s :*** ss)) -> ((,s) <$> ea, ss)) <$> (unEffT' @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
 {-# INLINE runEffTOuter #-}
 
 -- | the same as runEffTOuter, but discards the state
 runEffTOuter_ :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
   => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m a
-runEffTOuter_ mread mstate eff = EffT'
-  $ \modsRead modsState ->
-    (\(ea, (_ :*** ss)) -> (ea, ss)) <$> (unEffT' @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
+runEffTOuter_ mread mstate eff = fst <$> runEffTOuter @mod @mods mread mstate eff
 {-# INLINE runEffTOuter_ #-}
 
 -- | Running an inner module of EffT, eliminates it
