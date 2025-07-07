@@ -43,7 +43,7 @@ newtype RST r s m a = RST { unRST :: RS (HList r) (HList s) m a }
 
 -- | Deriving instance for 'MonadIO' to allow lifting of IO actions
 -- into the 'RST' monad.
-deriving instance MonadIO m => MonadIO (RST r s m)
+deriving newtype instance MonadIO m => MonadIO (RST r s m)
 -- deriving instance MonadIO m => MonadIO (RSET r s e m)
 
 -- | Runs a 'RST' computation with the given environment and state,
