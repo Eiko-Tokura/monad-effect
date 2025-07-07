@@ -33,7 +33,7 @@ type family (xs :: [Type]) ++ (ys :: [Type]) :: [Type] where
   '[] ++ bs = bs
   (a:as) ++ bs = a : (as ++ bs)
 
-type family IfBool (b :: Bool) (t :: k) (e :: k) where
+type family IfBool (b :: Bool) (t :: k) (e :: k) :: k where
   IfBool 'True  a _ = a
   IfBool 'False _ b = b
 
@@ -63,7 +63,7 @@ axiomNotEqElem _ = unsafeCoerce Refl
 
 -- | Axiom, validity relies only on the instance resolution
 firstIndexTraverseNotEqElemIn :: forall e t ts. (NotEq e t, ElemIn e ts ~ True) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
-firstIndexTraverseNotEqElemIn = unsafeCoerce Refl :: FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
+firstIndexTraverseNotEqElemIn = unsafeCoerce Refl
 {-# INLINE firstIndexTraverseNotEqElemIn #-}
 
 instance {-# OVERLAPPABLE #-} (NotEq a b, CheckIfElem a bs) => CheckIfElem a (b ': bs) where

@@ -40,7 +40,6 @@ type family DependencyW (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Const
 type family Dependency (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
   Dependency mod deps mods = (ConsFDataList FData (mod : mods), DependencyW mod deps mods)
 
--- class Module mod => SystemModule mod where
 type SystemInitDataHardCode' c mods = c ModuleInitDataHardCode mods
 type SystemInitDataHardCode    mods = SystemInitDataHardCode' FData mods
 type SystemInitDataHardCodeL   mods = SystemInitDataHardCode' FList mods
@@ -66,6 +65,7 @@ runSystemWithInitData initData eff = do
 -- in practice we could use
 -- instance SomeModuleWeNeed `In` mods => Loadable mods SomeModuleToLoad
 class Loadable c mod mods where
+  {-# MINIMAL initModule #-}
   initModule  :: ModuleInitData mod -> EffT' c mods '[SystemError] IO (ModuleRead mod, ModuleState mod)
 
   beforeEvent :: EffT' c (mod : mods) NoError IO ()
@@ -157,7 +157,7 @@ instance SystemArgs c '[] where
   {-# INLINE readSystemInitDataFromArgs #-}
 
 -- | Inductive instance for system
-instance (Module mod, System c mods, Loadable c mod mods) => System c (mod ': mods) where
+instance (SystemModule mod, System c mods, Loadable c mod mods) => System c (mod ': mods) where
   initAllModules (x :*** xs) = do
     (rs, ss)  <- initAllModules xs
     (er, ss') <- liftIO $ runEffT rs ss $ initModule @c @mod x
@@ -191,14 +191,14 @@ instance (Module mod, System c mods, Loadable c mod mods) => System c (mod ': mo
     embedEffT $ releaseSystem @c @mods
   {-# INLINE releaseSystem #-}
 
-instance (SubList c mods (mod:mods), Module mod, SystemEnv c mods, Loadable c mod mods, LoadableEnv c mod mods) => SystemEnv c (mod ': mods) where
+instance (SubList c mods (mod:mods), SystemModule mod, SystemEnv c mods, Loadable c mod mods, LoadableEnv c mod mods) => SystemEnv c (mod ': mods) where
   readSystemInitDataFromEnv (im :*** ims) = do
     xs <- readSystemInitDataFromEnv @c @mods ims
     x  <- readInitDataFromEnv @c @mod @mods im
     return $ x :*** xs
   {-# INLINE readSystemInitDataFromEnv #-}
 
-instance (SubList c mods (mod:mods), Module mod, SystemArgs c mods, Loadable c mod mods, LoadableArgs c mod mods) => SystemArgs c (mod ': mods) where
+instance (SubList c mods (mod:mods), SystemModule mod, SystemArgs c mods, Loadable c mod mods, LoadableArgs c mod mods) => SystemArgs c (mod ': mods) where
   readSystemInitDataFromArgs (im :*** ims) args = do
     xs <- readSystemInitDataFromArgs @c @mods ims args
     x  <- readInitDataFromArgs @c @mod @mods im args
