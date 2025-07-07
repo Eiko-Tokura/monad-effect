@@ -98,9 +98,6 @@ generateFDataByIndexInstance idx len = do
     fail $ "generateFDataByIndexInstance: index " ++ show idx
         ++ " out of bounds for list length " ++ show len
 
-  ----------------------------------------------------------------------
-  -- names -------------------------------------------------------------
-  ----------------------------------------------------------------------
   let conName   = mkName ("FData" ++ show len)          -- FData1 .. FData5 …
       className = mkName "FDataByIndex"                 --''FDataByIndex
       fName     = mkName "f"                            -- the function arg
@@ -114,9 +111,6 @@ generateFDataByIndexInstance idx len = do
       fGetFDataByIndex = mkName "getFDataByIndex"    -- getFDataByIndex
       fModifyFDataByIndex  = mkName "modifyFDataByIndex" -- modifyFDataByIndex
 
-  ----------------------------------------------------------------------
-  -- instance head -----------------------------------------------------
-  ----------------------------------------------------------------------
   let instHead = AppT
                    (AppT (ConT className) (natTy idx))
                    (promotedListTy tVars)
@@ -150,12 +144,9 @@ generateFDataByIndexInstance idx len = do
                (NormalB modifyBody)
                []
 
-  ----------------------------------------------------------------------
-  -- finished instance -------------------------------------------------
-  ----------------------------------------------------------------------
   pure $ InstanceD
-          Nothing           -- no overlap pragmas
-          []                -- no constraints
+          Nothing
+          []
           instHead
           [ FunD fGetFDataByIndex    [getClause]
           , FunD fModifyFDataByIndex [modifyClause]
@@ -258,7 +249,6 @@ generateRemoveElemInstance n = do
   when (n < 1) $
     fail "generateRemoveElemInstance: list length must be ≥ 1"
 
-  -- type variables  x1 … xn
   let tNames = xTypeNames [1 .. n]
       tVars  = map VarT tNames
       listTy = promotedListTy tVars
@@ -269,9 +259,6 @@ generateRemoveElemInstance n = do
 
       instHead = ConT cRemoveElem `AppT` ConT (mkName "FData") `AppT` listTy
 
-  -- ---------------------------------------------------------------------------
-  --  build the clauses for every index 0 … n-1
-  -- ---------------------------------------------------------------------------
       clausesRemove  = [ mkRemoveClause  i  | i <- [0 .. n-1] ]
       clausesUnRem   = [ mkUnRemoveClause i | i <- [0 .. n-1] ]
 
@@ -301,9 +288,6 @@ generateRemoveElemInstance n = do
             result = foldl AppE (ConE (fDataCon n)) fields
         in Clause [patSFirstIndex, VarP xNew, patTail] (NormalB result) []
 
-  -- ---------------------------------------------------------------------------
-  --  done
-  -- ---------------------------------------------------------------------------
   pure $ InstanceD Nothing [] instHead
           [ FunD fRemoveElem    clausesRemove
           , FunD fUnRemoveElem  clausesUnRem

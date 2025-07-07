@@ -12,6 +12,7 @@ module Control.Monad.Effect
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
+  , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
   , effEither, effEitherWith
   , effEitherIn, effEitherInWith
   , effMaybeWith, effMaybeInWith
@@ -29,7 +30,7 @@ module Control.Monad.Effect
   , SystemState, SystemRead, SystemEvent, SystemInitData
 
   -- * Modules
-  , Module(..)
+  , Module(..), SystemModule(..)
   , queryModule, queriesModule, askModule, asksModule
   , localModule
   , getModule, getsModule
@@ -284,11 +285,15 @@ runEffTIn_ mread mstate eff = fst <$> runEffTIn @mod @mods mread mstate eff
 class Module mod where
   data ModuleRead     mod :: Type
   data ModuleState    mod :: Type
+
+-- | A module that can be placed into a system, has some init data required to initialize it, and can have some events
+class Module mod => SystemModule mod where
   data ModuleEvent    mod :: Type
   data ModuleInitData mod :: Type
 
 type SystemState    c mods = c     ModuleState    mods
 type SystemRead     c mods = c     ModuleRead     mods
+
 type SystemEvent      mods = UList ModuleEvent    mods
 type SystemInitData c mods = c     ModuleInitData mods
 
@@ -384,6 +389,38 @@ liftIOSafeWith f io = EffT' $ \_ s -> do
     Left e'  -> return (RFailure $ EHead $ f e', s)
 {-# INLINE liftIOSafeWith #-}
 
+-- | @try@ on the Base monad IO, adding as the first error in the error list.
+-- It is recommended that you wrap low-level routines into algebraic error in the first place instead of using this function.
+effTryIO :: Exception e => EffT' c mods es IO a -> EffT' c mods (e : es) IO a
+effTryIO = effTryIOWith id
+{-# INLINE effTryIO #-}
+
+-- | @try@ on the Base monad IO, put into the error list.
+-- It is recommended that you wrap low-level routines into algebraic error in the first place instead of using this function.
+effTryIOIn :: forall e es c mods a. (Exception e, InList e es) => EffT' c mods es IO a -> EffT' c mods es IO a
+effTryIOIn = effTryIOInWith @e id
+{-# INLINE effTryIOIn #-}
+
+-- | @try@ on the Base monad IO with the given function, adding as the first error in the error list.
+-- It is recommended that you wrap low-level routines into algebraic error in the first place instead of using this function.
+effTryIOWith :: Exception e => (e -> e') -> EffT' c mods es IO a -> EffT' c mods (e' : es) IO a
+effTryIOWith f eff = EffT' $ \rs ss -> do
+  ePair <- E.try (unEffT' eff rs ss)
+  case ePair of
+    Left e -> return (RFailure $ EHead $ f e, ss)
+    Right (eResult, stateMods) -> return (resultMapErrors ETail eResult, stateMods)
+{-# INLINE effTryIOWith #-}
+
+-- | @try@ on the Base monad IO with the given function, adding as the first error in the error list.
+-- It is recommended that you wrap low-level routines into algebraic error in the first place instead of using this function.
+effTryIOInWith :: (Exception e, InList e' es) => (e -> e') -> EffT' c mods es IO a -> EffT' c mods es IO a
+effTryIOInWith f eff = EffT' $ \rs ss -> do
+  ePair <- E.try (unEffT' eff rs ss)
+  case ePair of
+    Left e                     -> return (RFailure $ embedE $ f e, ss)
+    Right (eResult, stateMods) -> return (eResult, stateMods)
+{-# INLINE effTryIOInWith #-}
+
 -- | Convert the first error in the effect to Either
 errorToEither :: Monad m => EffT' c mods (e : es) m a -> EffT' c mods es m (Either e a)
 errorToEither eff = EffT' $ \rs ss -> do
@@ -426,6 +463,8 @@ effCatch eff h = EffT' $ \rs ss -> do
 
 -- | Catch a specific error type in the error list, and handle it with a handler function.
 -- This will remove the error type from the error list.
+--
+-- the error type is the first type parameter, suitable for type application.
 effCatchIn:: forall e es mods m c a es'. (Monad m, InList e es, es' ~ Remove (FirstIndex e es) es)
   => EffT' c mods es m a -> (e -> EffT' c mods es' m a) -> EffT' c mods es' m a
 effCatchIn eff h = EffT' $ \rs ss -> do

@@ -154,8 +154,8 @@ benchmark rst-bench
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -fconstraint-solver-iterations=16 -O0
-    -- -flate-dmd-anal
+    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -fconstraint-solver-iterations=16 -O2 -v -flate-dmd-anal -fmax-worker-args=16
+    -- -O2 -flate-dmd-anal
 
     -- Base language which the package is written in.
     default-language: GHC2021

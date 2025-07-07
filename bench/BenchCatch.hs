@@ -31,17 +31,17 @@ import Polysemy.Reader qualified as P
 import "eff" Control.Effect qualified as E
 #endif
 
-programMonadEffect :: Int -> ME.EffT mods '[ErrorValue "()" ()] IO ()
+programMonadEffect :: Int -> ME.EffT mods '[ErrorValue "()" ()] ME.Identity ()
 programMonadEffect = \case
     0 -> ME.effThrow (ErrorValue @"()" ())
     n -> ME.effCatchIn' (programMonadEffect (n - 1)) $ \(ErrorValue @"()" ()) -> ME.effThrow (ErrorValue @"()" ())
 {-# NOINLINE programMonadEffect #-}
 
-catchMonadEffect :: Int -> IO (Either () ())
-catchMonadEffect n = fmap (first $ \(ErrorValue s) -> s) . ME.runEffT01 $ programMonadEffect n
+catchMonadEffect :: Int -> Either () ()
+catchMonadEffect n = (first $ \(ErrorValue s) -> s) . ME.runIdentity . ME.runEffT01 $ programMonadEffect n
 
-catchMonadEffectDeep :: Int -> IO (Result '[ErrorValue "()" ()] ())
-catchMonadEffectDeep n = ME.runEffT_
+catchMonadEffectDeep :: Int -> (Result '[ErrorValue "()" ()] ())
+catchMonadEffectDeep n = ME.runIdentity $ ME.runEffT_
   (FData10 (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ())
            (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ())
   )

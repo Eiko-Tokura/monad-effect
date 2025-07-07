@@ -215,29 +215,6 @@ main = defaultMain
 Tested on my laptop with GHC 9.12.2:
 
 ```plain
--------- With no optimization (-O0)
-
-benchmarking State Effect Eff/FList
-time                 5.122 ms   (4.235 ms .. 5.986 ms)
-                     0.908 R²   (0.887 R² .. 0.999 R²)
-mean                 4.481 ms   (4.351 ms .. 4.803 ms)
-std dev              548.2 μs   (78.24 μs .. 976.1 μs)
-variance introduced by outliers: 70% (severely inflated)
-
-benchmarking State Effect Eff/FData
-time                 961.2 μs   (849.0 μs .. 1.122 ms)
-                     0.912 R²   (0.875 R² .. 0.974 R²)
-mean                 932.8 μs   (878.9 μs .. 1.025 ms)
-std dev              210.8 μs   (141.4 μs .. 274.9 μs)
-variance introduced by outliers: 94% (severely inflated)
-
-benchmarking Mtl State/StateT
-time                 24.07 ms   (23.22 ms .. 24.88 ms)
-                     0.995 R²   (0.992 R² .. 0.998 R²)
-mean                 23.08 ms   (22.40 ms .. 23.52 ms)
-std dev              1.277 ms   (891.9 μs .. 1.971 ms)
-variance introduced by outliers: 19% (moderately inflated)
-
 -------- With -O2 -flate-dmd-anal
 
 benchmarking State Effect Eff/FList
@@ -259,7 +236,6 @@ time                 117.1 μs   (116.8 μs .. 117.3 μs)
 mean                 117.3 μs   (117.2 μs .. 117.5 μs)
 std dev              463.5 ns   (345.5 ns .. 691.4 ns)
 ```
-
 
 The optimization friendly design of the library allows you to use it in performance critical code without sacrificing purity and composability, it can be used as a drop-in replacement (upgrade!) for `StateT`, `ExceptT`, `ReaderT`, or even `IO` monad, which is more performant and composable!
 

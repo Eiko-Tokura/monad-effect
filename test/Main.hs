@@ -1,12 +1,12 @@
-{-# OPTIONS_GHC -fconstraint-solver-iterations=100 -Wno-partial-type-signatures #-}
+{-# OPTIONS_GHC -fconstraint-solver-iterations=100 -Wno-partial-type-signatures -fmax-worker-args=16 #-}
 {-# LANGUAGE DataKinds, GADTs, PartialTypeSignatures #-}
 module Main (main) where
 
-import Control.Monad.Effect
+import Control.Monad.Effect as ME
 import Criterion.Main
 import Data.TypeList
-import Data.TypeList.FData
-import Module.RS
+import Data.TypeList.FData as ME
+import Module.RS as ME
 import qualified Control.Monad.State as S
 
 -- The test result shows that for FList there is around (k+1) ns overhead for fetching the k-th state inside the effect system
@@ -23,6 +23,37 @@ import qualified Control.Monad.State as S
 -- even without any optimizations, the speed is 10 times faster than FList
 --
 -- with -O2 -flate-dmd-anal it can optimize to a minimal hand-written fast loop!
+
+programMonadEffect :: ME.In (ME.SModule Int) mods => ME.EffT mods ME.NoError ME.Identity Int
+programMonadEffect = do
+    x <- ME.getS @Int
+    if x == 0
+        then pure x
+        else do
+            ME.putS (x - 1)
+            programMonadEffect
+
+countdownMonadEffect :: Int -> (Int, _)
+countdownMonadEffect n =
+    ME.runIdentity $ ME.runEffTNoError (ME.FData1 ME.SRead) (ME.FData1 $ ME.SState n) $ programMonadEffect
+
+countdownMonadEffectDeep7 :: Int -> (Int, _)
+countdownMonadEffectDeep7 n = ME.runIdentity $
+    ME.runEffTNoError
+      (ME.FData7 readUnit readUnit readUnit SRead readUnit readUnit readUnit) --readUnit SRead readUnit readUnit readUnit readUnit readUnit)
+      (ME.FData7 rStateUnit rStateUnit rStateUnit (ME.SState n) rStateUnit rStateUnit rStateUnit) --rStateUnit rStateUnit rStateUnit)
+        $ programMonadEffect
+      where readUnit = ME.RRead ()
+            rStateUnit = ME.RState
+
+countdownMonadEffectDeep11 :: Int -> (Int, _)
+countdownMonadEffectDeep11 n = ME.runIdentity $
+    ME.runEffTNoError
+      (ME.FData15 readUnit readUnit SRead readUnit readUnit readUnit readUnit readUnit readUnit readUnit readUnit readUnit readUnit readUnit readUnit)
+      (ME.FData15 rStateUnit rStateUnit (ME.SState n) rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit rStateUnit)
+        $ programMonadEffect
+      where readUnit = ME.RRead ()
+            rStateUnit = ME.RState
 
 testEffStateFPoly :: _ => EffT' flist '[RModule (), SModule Int, SModule Bool] NoError IO ()
 testEffStateFPoly = do
@@ -106,6 +137,11 @@ main = do
                 then return ()
                 else liftIO $ putStrLn "State updated incorrectly"
           )
+      ]
+    , bgroup "Countdown"
+      [ bench "Monad Effect" $ nf countdownMonadEffect 1_000_000
+      , bench "Monad Effect Deep 7" $ nf countdownMonadEffectDeep7 1_000_000
+      , bench "Monad Effect Deep 11" $ nf countdownMonadEffectDeep11 1_000_000
       ]
     , bgroup "State Effect Eff"
       [ bench "FList" $ whnfIO $ runEffTNoError

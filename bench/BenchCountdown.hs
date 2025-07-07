@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -funfolding-use-threshold=1000 -fmax-worker-args=16 #-}
 {-# LANGUAGE CPP, PartialTypeSignatures #-}
 
 -- SPDX-License-Identifier: BSD-3-Clause
@@ -33,7 +34,7 @@ import Polysemy.State qualified as P
 import "eff" Control.Effect qualified as EF
 #endif
 
-programMonadEffect :: ME.EffT '[ME.SModule Int] ME.NoError ME.Identity Int
+programMonadEffect :: ME.In (ME.SModule Int) mods => ME.EffT mods ME.NoError ME.Identity Int
 programMonadEffect = do
     x <- ME.getS @Int
     if x == 0
@@ -41,9 +42,6 @@ programMonadEffect = do
         else do
             ME.putS (x - 1)
             programMonadEffect
-{-# NOINLINE programMonadEffect #-}
--- Comment: ^ this NOINLINE is USELESS because it's a recursive function
--- but the original author put them anyway, so I kept it.
 
 programMonadEffectDeep :: ME.EffT 
   [ ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
@@ -57,7 +55,6 @@ programMonadEffectDeep = do
         else do
             ME.putS (x - 1)
             programMonadEffectDeep
-{-# NOINLINE programMonadEffectDeep #-}
 
 countdownMonadEffect :: Int -> (Int, _)
 countdownMonadEffect n =
@@ -80,7 +77,7 @@ programHeftia = do
         else do
             H.put (x - 1)
             programHeftia
-{-# NOINLINE programHeftia #-}
+{-# SPECIALIZE programHeftia :: H.Eff '[H.State Int] Int #-}
 
 countdownHeftia :: Int -> (Int, Int)
 countdownHeftia n = H.runPure $ H.runState n programHeftia
@@ -161,7 +158,7 @@ programEffectful = do
         else do
             EL.put (x - 1)
             programEffectful
-{-# NOINLINE programEffectful #-}
+{-# SPECIALIZE programEffectful :: EL.Eff '[EL.State Int] Int #-}
 
 countdownEffectful :: Int -> (Int, Int)
 countdownEffectful n = EL.runPureEff $ EL.runStateLocal n programEffectful
@@ -181,7 +178,6 @@ programEff = do
         else do
             EF.put (x - 1)
             programEff
-{-# NOINLINE programEff #-}
 
 countdownEff :: Int -> (Int, Int)
 countdownEff n = EF.run $ EF.runState n programEff
@@ -200,7 +196,6 @@ programMtl = do
         else do
             M.put (x - 1)
             programMtl
-{-# NOINLINE programMtl #-}
 
 countdownMtl :: Int -> (Int, Int)
 countdownMtl = M.runState programMtl

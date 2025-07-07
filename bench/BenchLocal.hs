@@ -23,20 +23,30 @@ import "data-effects" Control.Effect.Interpret qualified as HD
 import "eff" Control.Effect qualified as E
 #endif
 
-programMonadEffect :: _ => Int -> ME.EffT mods ME.NoError IO Int
+programMonadEffect :: Int -> ME.EffT '[ME.RModule Int] ME.NoError ME.Identity Int
 programMonadEffect = \case
     0 -> ME.askR @Int
     n -> ME.localR @Int (+ 1) (programMonadEffect (n - 1))
 {-# NOINLINE programMonadEffect #-}
 
-localMonadEffect :: Int -> IO Int
-localMonadEffect n = fmap fst . ME.runEffTNoError
-  (FData1 $ RRead (0 :: Int))
-  (FData1 RState)
-  $ programMonadEffect n
+programMonadEffectDeep :: Int -> ME.EffT
+  [ ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
+  , ME.RModule Int
+  , ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
+  ] ME.NoError Identity Int
+programMonadEffectDeep = \case
+    0 -> ME.askR @Int
+    n -> ME.localR @Int (+ 1) (programMonadEffectDeep (n - 1))
+{-# NOINLINE programMonadEffectDeep #-}
 
-localMonadEffectDeep :: Int -> IO Int
-localMonadEffectDeep n = fmap fst . ME.runEffTNoError
+localMonadEffect :: Int -> Int
+localMonadEffect n = fst . ME.runIdentity . ME.runEffTNoError
+          (FData1 $ RRead (0 :: Int))
+          (FData1 RState)
+          $ programMonadEffect n
+
+localMonadEffectDeep :: Int -> Int
+localMonadEffectDeep n = fst . ME.runIdentity . ME.runEffTNoError
   (FData11 (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ()) 
            (RRead (0 :: Int))
            (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ())
@@ -45,7 +55,7 @@ localMonadEffectDeep n = fmap fst . ME.runEffTNoError
            RState
            RState RState RState RState RState
   )
-  $ programMonadEffect n
+  $ programMonadEffectDeep n
 
 programHeftia :: (H.Ask Int `H.In` es, H.Local Int `H.In` es) => Int -> H.Eff es Int
 programHeftia = \case

@@ -54,7 +54,7 @@ main =
                     , bench "monad-effect.5+5" $ nf countdownMonadEffectDeep x
                     ]
         , bgroup "catch.shallow" $
-            [1000] <&> \x ->
+            [10000] <&> \x ->
                 bgroup
                     (show x)
                     [ bench "heftia" $ nf catchHeftia x
@@ -64,7 +64,7 @@ main =
                     , -- , bench "eff" $ nf catchEff x
                       -- `eff` is x500 slow in this case, so it is excluded because it makes the graph hard to read.
                       bench "mtl" $ nf catchMtl x
-                    , bench "monad-effect" $ nfIO $ catchMonadEffect x
+                    , bench "monad-effect" $ nf catchMonadEffect x
                     ]
         , bgroup "catch.deep" $
             [10000] <&> \x ->
@@ -81,7 +81,7 @@ main =
                     , bench "effectful.5+5" $ nf catchEffectfulDeep x
                     , -- , bench "eff.5+5" $ nf catchEffDeep x
                       bench "mtl.5+5" $ nf catchMtlDeep x
-                    , bench "monad-effect.10" $ whnfIO $ catchMonadEffectDeep x
+                    , bench "monad-effect.10" $ whnf catchMonadEffectDeep x
                     ]
         , bgroup "local.shallow" $
             [10000] <&> \x ->
@@ -91,7 +91,7 @@ main =
                     , bench "polysemy" $ nf localSem x
                     , bench "fused" $ nf localFused x
                     , bench "effectful" $ nf localEffectful x
-                    , bench "monad-effect" $ nfIO $ localMonadEffect x
+                    , bench "monad-effect" $ nf localMonadEffect x
                     -- , bench "eff" $ nf localEff x
                     -- `eff` is x500 slow in this case, so it is excluded because it makes the graph hard to read.
                     --  bench "mtl" $ nf localMtl x
@@ -111,7 +111,7 @@ main =
                     , bench "effectful.5+5" $ nf localEffectfulDeep x
                     --  bench "eff.5+5" $ nf localEffDeep x
                     --  bench "mtl.5+5" $ nf localMtlDeep x
-                    , bench "monad-effect.5+5" $ nfIO $ localMonadEffectDeep x
+                    , bench "monad-effect.5+5" $ nf localMonadEffectDeep x
                     ]
         , bgroup "nondet.shallow" $
             [32] <&> \x ->
