@@ -7,8 +7,8 @@ module Control.Monad.Effect
   , embedEffT, embedMods, embedError
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
   , runEffTNoError
-  , runEffTOuter, runEffTOuter_
-  , runEffTIn, runEffTIn_
+  , runEffTOuter, runEffTOuter', runEffTOuter_
+  , runEffTIn, runEffIn', runEffTIn_
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
@@ -18,7 +18,7 @@ module Control.Monad.Effect
   , effMaybeWith, effMaybeInWith
   , pureMaybeInWith, pureEitherInWith
   , baseEitherIn, baseEitherInWith, baseMaybeInWith
-  , errorToEither, errorToEitherAll
+  , errorToEither, errorToEitherAll, eitherAllToEffect
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
   , effEitherSystemException
 
@@ -78,7 +78,7 @@ type In    mods es  = In'   FData mods es
 type EffL  mods es = EffT' FList mods es IO
 type EffLT mods es = EffT' FList mods es
 type PureL mods es = EffT' FList mods es Identity
-type InL   mods es = In' FList mods es
+type InL   mods es = In'   FList mods es
 
 -- | A constraint that checks the error list is empty in EffT
 type family MonadNoError m :: Constraint where
@@ -96,7 +96,7 @@ checkNoError = id
 newtype ErrorText (s :: Symbol) = ErrorText Text
   deriving newtype (IsString)
 
--- | a newtype wrapper ErrorText that wraps a custom value type v with a name (symbol type)
+-- | a newtype wrapper ErrorValue that wraps a custom value type v with a name (symbol type)
 -- useful for creating ad-hoc error type
 newtype ErrorValue (a :: Symbol) (v :: Type) = ErrorValue v
 
@@ -247,14 +247,22 @@ runEffT00 = fmap resultNoError . runEffT0
 
 -- | Runs a EffT' computation and eliminate the most outer effect with its input given
 --
--- Warning: `ModuleState mod` will be lost when the outer EffT' returns an exception
+-- Note: `ModuleState mod` will be lost (because nothing will be returned) when the outer EffT' monad returns an exception. This should not be a problem and is expected from the type signature. But if you want to avoid it, you can catch the exceptions or use `errorToEitherAll` or `runEffTOuter'`
 runEffTOuter :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
   => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m (a, ModuleState mod)
 runEffTOuter mread mstate eff = EffT' $ \modsRead modsState ->
     (\(ea, (s :*** ss)) -> ((,s) <$> ea, ss)) <$> (unEffT' @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
 {-# INLINE runEffTOuter #-}
 
--- | the same as runEffTOuter, but discards the state
+-- | Runs a EffT' computation and eliminate the most outer effect with its input given, returning the result as Result type.
+--
+-- This makes sure the `ModuleState mod` up until exception or completion is always returned.
+runEffTOuter' :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
+  => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods NoError m (Result es a, ModuleState mod)
+runEffTOuter' r s = runEffTOuter r s . errorToResult
+{-# INLINE runEffTOuter' #-}
+
+-- | the same as `runEffTOuter`, but discards the state
 runEffTOuter_ :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
   => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m a
 runEffTOuter_ mread mstate eff = fst <$> runEffTOuter @mod @mods mread mstate eff
@@ -272,6 +280,15 @@ runEffTIn mread mstate eff = EffT' $ \modsRead modsState -> do
     RSuccess a  -> pure (RSuccess (a, getIn ss'), removeElem (singFirstIndex @mod @mods) ss')
     RFailure es -> pure (RFailure es, removeElem (singFirstIndex @mod @mods) ss')
 {-# INLINE runEffTIn #-}
+
+-- | Runs an inner EffT' module and eliminate it, returning the result as Result type.
+--
+-- This makes sure the `ModuleState mod` up until exception or completion is always returned.
+runEffIn' :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
+  => ModuleRead mod -> ModuleState mod -> EffT' c mods es m a
+  -> EffT' c (Remove (FirstIndex mod mods) mods) NoError m (Result es a, ModuleState mod)
+runEffIn' mread mstate = runEffTIn mread mstate . errorToResult
+{-# INLINE runEffIn' #-}
 
 -- | The same as runEffTIn, but discards the state
 runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
@@ -439,6 +456,24 @@ errorToEitherAll eff = EffT' $ \rs ss -> do
     RSuccess a    -> return (RSuccess (Right a), stateMods)
     RFailure es   -> return (RSuccess (Left es), stateMods)
 {-# INLINE errorToEitherAll #-}
+
+-- | Convert all errors to Result
+errorToResult :: Monad m => EffT' c mods es m a -> EffT' c mods NoError m (Result es a)
+errorToResult eff = EffT' $ \rs ss -> do
+  (eResult, stateMods) <- unEffT' eff rs ss
+  case eResult of
+    RSuccess a    -> return (pure $ RSuccess a, stateMods)
+    RFailure es   -> return (pure $ RFailure es, stateMods)
+{-# INLINE errorToResult #-}
+
+-- | The reverse of errorToEither, convert Either (EList es) into the error list.
+eitherAllToEffect :: Monad m => EffT' c mods NoError m (Either (EList es) a) -> EffT' c mods es m a
+eitherAllToEffect eff = EffT' $ \rs ss -> do
+  (eResult, stateMods) <- unEffT' eff rs ss
+  case eResult of
+    RSuccess (Right a) -> return (RSuccess a, stateMods)
+    RSuccess (Left es) -> return (RFailure es, stateMods)
+{-# INLINE eitherAllToEffect #-}
 
 -- | Catch SystemError
 effCatchSystem :: (Monad m, In' c SystemError es) => EffT' c mods es m a -> (SystemError -> EffT' c mods es m a) -> EffT' c mods es m a
