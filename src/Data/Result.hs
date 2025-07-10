@@ -16,6 +16,12 @@ data EList (ts :: [Type]) where
   EHead :: !t -> EList (t : ts)
   ETail :: !(EList ts) -> EList (t : ts)
 
+instance {-# OVERLAPPING #-} Show t => Show (EList '[t]) where
+  show (EHead x) = "EHead (" ++ show x ++ ")"
+instance (Show t, Show (EList ts)) => Show (EList (t : ts)) where
+  show (EHead x)  = "EHead (" ++ show x ++ ")"
+  show (ETail xs) = "ETail (" ++ show xs ++ ")"
+
 embedES :: SFirstIndex e ts -> e -> EList ts
 embedES SFirstIndexZero e = EHead e
 embedES (SFirstIndexSucc _ n) e = ETail (embedES n e)
@@ -25,6 +31,12 @@ embedES (SFirstIndexSucc _ n) e = ETail (embedES n e)
 data Result (es :: [Type]) (a :: Type) where
   RSuccess :: a -> Result es a
   RFailure :: !(EList es) -> Result es a
+
+instance {-# OVERLAPPING #-} Show a => Show (Result '[] a) where
+  show (RSuccess a) = "RSuccess (" ++ show a ++ ")"
+instance (Show (EList es), Show a) => Show (Result es a) where
+  show (RSuccess a)  = "RSuccess (" ++ show a ++ ")"
+  show (RFailure es) = "RFailure (" ++ show es ++ ")"
 
 instance Functor (Result es) where
   fmap f (RSuccess a)  = RSuccess (f a)

@@ -1,4 +1,4 @@
-{-# LANGUAGE DerivingVia, AllowAmbiguousTypes #-}
+{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances #-}
 -- | The module you should import to use for effectful computation
 module Control.Monad.Effect
   ( -- * EffTectful computation
@@ -44,9 +44,11 @@ module Control.Monad.Effect
   , In, InL
   ) where
 
+-- import Control.Parallel.Strategies
 import Control.Exception as E hiding (TypeError)
 import Control.Monad.Catch
 import Control.Monad.IO.Class
+import Control.Monad.Base
 import Control.Monad.RST
 import Control.Monad.Trans.Control
 import Data.Bifunctor
@@ -171,6 +173,20 @@ instance MonadTransControl (EffT' c mods es) where
   restoreT mRes = EffT' $ \_ _ -> mRes
   {-# INLINE restoreT #-}
 
+instance MonadBase b m => MonadBase b (EffT' c mods es m) where
+  liftBase = lift . liftBase
+  {-# INLINE liftBase #-}
+
+instance MonadBaseControl b m => MonadBaseControl b (EffT' c mods es m) where
+  type StM (EffT' c mods es m) a = StM m (Result es a, SystemState c mods)
+  liftBaseWith = defaultLiftBaseWith
+  restoreM = defaultRestoreM
+  {-# INLINE liftBaseWith #-}
+  {-# INLINE restoreM #-}
+  -- f = EffT' $ \rs ss -> do
+  -- let ma = liftBaseWith @b @m $ \runInBase -> runInBase $ runEffT rs ss _
+  -- _
+
 -- | The error in throwM is thrown as MonadThrowError, which is a wrapper for SomeException.
 instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadThrow (EffT' c mods es m) where
   throwM = effThrowIn . MonadThrowError . toException
@@ -192,8 +208,12 @@ embedEffT eff = EffT' $ \rs' ss' -> do
       ss = getSubListF @_ @mods ss'
       modsEffT' = unEffT' eff
   (emods, ss1) <- modsEffT' rs ss
-  return (subListResultEmbed emods, subListUpdateF ss' ss1)
+  returnStrict (subListResultEmbed emods, subListUpdateF ss' ss1)
 {-# INLINE embedEffT #-}
+
+returnStrict :: Monad m => (a, b) -> m (a, b)
+returnStrict (!a, !b) = return $! (a, b)
+{-# INLINE returnStrict #-}
 
 -- | embed effect, but only change the mods list, the error list remains the same. The (inner) mods type variable is the first type parameter, suitable for type application.
 embedMods :: forall mods mods' c es m a. (Monad m, ConsFDataList c mods', SubListEmbed es es, SubList c mods mods') => EffT' c mods es m a -> EffT' c mods' es m a
@@ -277,8 +297,8 @@ runEffTIn mread mstate eff = EffT' $ \modsRead modsState -> do
       ss = unRemoveElem (singFirstIndex @mod @mods) mstate modsState
   (ea, ss') <- unEffT' eff rs ss
   case ea of
-    RSuccess a  -> pure (RSuccess (a, getIn ss'), removeElem (singFirstIndex @mod @mods) ss')
-    RFailure es -> pure (RFailure es, removeElem (singFirstIndex @mod @mods) ss')
+    RSuccess a  -> returnStrict (RSuccess (a, getIn ss'), removeElem (singFirstIndex @mod @mods) ss')
+    RFailure es -> returnStrict (RFailure es, removeElem (singFirstIndex @mod @mods) ss')
 {-# INLINE runEffTIn #-}
 
 -- | Runs an inner EffT' module and eliminate it, returning the result as Result type.
