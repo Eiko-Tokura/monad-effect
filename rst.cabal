@@ -90,6 +90,7 @@ library
                     , exceptions
                     , monad-control
                     , resourcet
+                    , transformers-base
                     , fusion-plugin-types
                     , template-haskell
                     , deepseq
