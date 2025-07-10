@@ -45,8 +45,9 @@ generateFDataInstance n = do
            instHead
            Nothing         -- Kind signature*
            [con]
-           [DerivClause (Just StockStrategy) $ ConT <$> [mkName "Generic"]
-           ,DerivClause (Just AnyclassStrategy) $ ConT <$> [mkName "NFData"]
+           [ DerivClause (Just StockStrategy)    $ ConT <$> [mkName "Generic"]
+           , DerivClause (Just AnyclassStrategy) $ ConT <$> [mkName "NFData"]
+           , DerivClause (Just AnyclassStrategy) $ ConT <$> [mkName "Default"]
            ]              -- No deriving clauses
 
 generateFDataInstances :: [Int] -> Q [Dec]
@@ -68,7 +69,7 @@ natTy :: Int -> TH.Type
 natTy 0 = PromotedT zeroName
 natTy n = AppT (PromotedT succName) (natTy (n-1))
 
--- A promoted type-level list '[t1 … tn]
+-- A promoted type-level list '[t1 ... tn]
 promotedListTy :: [TH.Type] -> TH.Type
 promotedListTy = foldr (\t acc -> AppT (AppT PromotedConsT t) acc) PromotedNilT
 
@@ -168,7 +169,7 @@ generateUnconsFDataInstance n = do
       xNames = xTypeNames [1 .. n]
       x1Name  = mkName "x1"
       fUnConsFData = mkName "unConsFData" -- unConsFData
-  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xNames)) $
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xNames))
     [ FunD
       fUnConsFData
       [ Clause
@@ -198,7 +199,7 @@ generateConsFData0Instance n = do
       xNames = xTypeNames [1 .. n-1]
       xName  = mkName "x"
       fConsFData0 = mkName "consF0" -- consF0
-  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames)) $
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames))
     [ FunD
       fConsFData0
       [ Clause
@@ -226,7 +227,7 @@ generateConsFData1Instance n = do
       xNames = xTypeNames [1 .. n]
       xName  = mkName "x"
       fConsFData1 = mkName "consF1" -- consF1
-  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames)) $
+  pure $ InstanceD Nothing [] (ConT className `AppT` ConT fData `AppT` promotedListTy (VarT <$> xTyNames))
     [ FunD
       fConsFData1
       [ Clause

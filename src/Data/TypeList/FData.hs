@@ -15,6 +15,7 @@ import Data.TypeList.FData.TH
 import Data.Kind (Type)
 import Data.Type.Equality
 import Data.Proxy
+import Data.Default
 
 data family FData (f :: Type -> Type) (ts :: [Type]) :: Type
 data instance FData f '[] = FData0
