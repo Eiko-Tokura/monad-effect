@@ -229,6 +229,12 @@ dataInstance DataInstanceSpec{..} =
 -- * generate type synonym for ModuleRead <MyModule> and ModuleState <MyModule>
 generateRSModule :: RSModuleSpec -> Q [Dec]
 generateRSModule RSModuleSpec{typeName, readSpec, stateSpec} = do
+  let warnStateNonStrict = any (\(_, strictness, _) -> not strictness) (dataFields stateSpec)
+
+  when warnStateNonStrict $ reportWarning
+    $  "The state record for the module " <> nameBase typeName
+    <> " has non-strict fields. This may lead to lazy thunk leaks in case of infinite updates without evaluation."
+
   let dataTag = DataD [] typeName [] Nothing [] []
 
       instanceModule = InstanceD Nothing [] (AppT (ConT ''Module) (ConT typeName))
