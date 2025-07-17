@@ -96,6 +96,7 @@ library
                     , template-haskell
                     , deepseq
                     , parsec
+                    , haskell-src-meta
 
     -- Directories containing source files.
     hs-source-dirs:   src

@@ -8,7 +8,7 @@ module Control.Monad.Effect
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
   , runEffTNoError
   , runEffTOuter, runEffTOuter', runEffTOuter_
-  , runEffTIn, runEffIn', runEffTIn_
+  , runEffTIn, runEffTIn', runEffTIn_
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
@@ -304,11 +304,11 @@ runEffTIn mread mstate eff = EffT' $ \modsRead modsState -> do
 -- | Runs an inner EffT' module and eliminate it, returning the result as Result type.
 --
 -- This makes sure the `ModuleState mod` up until exception or completion is always returned.
-runEffIn' :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
+runEffTIn' :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
   => ModuleRead mod -> ModuleState mod -> EffT' c mods es m a
   -> EffT' c (Remove (FirstIndex mod mods) mods) NoError m (Result es a, ModuleState mod)
-runEffIn' mread mstate = runEffTIn mread mstate . errorToResult
-{-# INLINE runEffIn' #-}
+runEffTIn' mread mstate = runEffTIn mread mstate . errorToResult
+{-# INLINE runEffTIn' #-}
 
 -- | The same as runEffTIn, but discards the state
 runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod mods)
