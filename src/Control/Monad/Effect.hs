@@ -212,7 +212,7 @@ embedEffT eff = EffT' $ \rs' ss' -> do
 {-# INLINE embedEffT #-}
 
 returnStrict :: Monad m => (a, b) -> m (a, b)
-returnStrict (!a, !b) = return $! (a, b)
+returnStrict (!a, !b) = return (a, b)
 {-# INLINE returnStrict #-}
 
 -- | embed effect, but only change the mods list, the error list remains the same. The (inner) mods type variable is the first type parameter, suitable for type application.
@@ -271,7 +271,7 @@ runEffT00 = fmap resultNoError . runEffT0
 runEffTOuter :: forall mod mods es m c a. (ConsFDataList c (mod : mods), ConsFData1 c mods, Monad m)
   => ModuleRead mod -> ModuleState mod -> EffT' c (mod : mods) es m a -> EffT' c mods es m (a, ModuleState mod)
 runEffTOuter mread mstate eff = EffT' $ \modsRead modsState ->
-    (\(ea, (s :*** ss)) -> ((,s) <$> ea, ss)) <$> (unEffT' @_ @(mod:mods) eff) (mread `consF1` modsRead) (mstate `consF1` modsState)
+    (\(ea, s :*** ss) -> ((,s) <$> ea, ss)) <$> unEffT' @_ @(mod:mods) eff (mread `consF1` modsRead) (mstate `consF1` modsState)
 {-# INLINE runEffTOuter #-}
 
 -- | Runs a EffT' computation and eliminate the most outer effect with its input given, returning the result as Result type.
@@ -498,7 +498,7 @@ eitherAllToEffect eff = EffT' $ \rs ss -> do
 -- | Catch SystemError
 effCatchSystem :: (Monad m, In' c SystemError es) => EffT' c mods es m a -> (SystemError -> EffT' c mods es m a) -> EffT' c mods es m a
 effCatchSystem eff h = EffT' $ \rs ss -> do
-  (eResult, stateMods) <- (unEffT' eff) rs ss
+  (eResult, stateMods) <- unEffT' eff rs ss
   case eResult of
     RSuccess a  -> return (RSuccess a, stateMods)
     RFailure es | Just e@(SystemErrorException _) <- getEMaybe es -> do
@@ -509,11 +509,11 @@ effCatchSystem eff h = EffT' $ \rs ss -> do
 -- | Catch the first error in the error list, and handle it with a handler function
 effCatch :: Monad m => EffT' c mods (e : es) m a -> (e -> EffT' c mods es m a) -> EffT' c mods es m a
 effCatch eff h = EffT' $ \rs ss -> do
-  (eResult, stateMods) <- (unEffT' eff) rs ss
+  (eResult, stateMods) <- unEffT' eff rs ss
   case eResult of
     RSuccess a          -> return (RSuccess a, stateMods)
     RFailure (EHead e)  -> (unEffT' $ h e) rs ss
-    RFailure (ETail es) -> return (RFailure $ es, stateMods)
+    RFailure (ETail es) -> return (RFailure es, stateMods)
 {-# INLINE effCatch #-}
 
 -- | Catch a specific error type in the error list, and handle it with a handler function.
@@ -523,7 +523,7 @@ effCatch eff h = EffT' $ \rs ss -> do
 effCatchIn:: forall e es mods m c a es'. (Monad m, InList e es, es' ~ Remove (FirstIndex e es) es)
   => EffT' c mods es m a -> (e -> EffT' c mods es' m a) -> EffT' c mods es' m a
 effCatchIn eff h = EffT' $ \rs ss -> do
-  (eResult, stateMods) <- (unEffT' eff) rs ss
+  (eResult, stateMods) <- unEffT' eff rs ss
   case getElemRemoveResult (singIndex @e @es) eResult of
     Left e -> case proofIndex @e @es of
       Refl -> unEffT' (h e) rs ss
@@ -534,7 +534,7 @@ effCatchIn eff h = EffT' $ \rs ss -> do
 effCatchIn' :: forall e es mods m c a. (Monad m, InList e es)
   => EffT' c mods es m a -> (e -> EffT' c mods es m a) -> EffT' c mods es m a
 effCatchIn' eff h = EffT' $ \rs ss -> do
-  r@(eResult, _) <- (unEffT' eff) rs ss
+  r@(eResult, _) <- unEffT' eff rs ss
   case eResult of
     RSuccess _ -> return r
     RFailure es  -> case getEMaybe @e @es es of
@@ -546,7 +546,7 @@ effCatchIn' eff h = EffT' $ \rs ss -> do
 -- Removes all errors from the error list.
 effCatchAll :: Monad m => EffT' c mods es m a -> (EList es -> EffT' c mods NoError m a) -> EffT' c mods NoError m a
 effCatchAll eff h = EffT' $ \rs ss -> do
-  (er, stateMods) <- (unEffT' eff) rs ss
+  (er, stateMods) <- unEffT' eff rs ss
   case er of
     RSuccess a    -> return (RSuccess a, stateMods)
     RFailure es   -> (unEffT' $ h es) rs ss
@@ -613,7 +613,7 @@ effEitherIn = effEitherInWith id
 {-# INLINE effEitherIn #-}
 
 -- | Turn a pure Maybe value into error with the given error type.
-pureMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> Maybe a -> EffT' c mods es m a 
+pureMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> Maybe a -> EffT' c mods es m a
 pureMaybeInWith e = effMaybeInWith e . lift . pure
 {-# INLINE pureMaybeInWith #-}
 
@@ -646,14 +646,14 @@ effMaybeWith e eff = case singIfElem @e @es of
 {-# INLINE effMaybeWith #-}
 
 -- | Turn an Maybe return type into the error list
-effMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> EffT' c mods es m (Maybe a) -> EffT' c mods es m a 
+effMaybeInWith :: forall e es m mods c a. (In' c e es, Monad m) => e -> EffT' c mods es m (Maybe a) -> EffT' c mods es m a
 effMaybeInWith e eff = EffT' $ \rs ss -> do
   (eResult, stateMods) <- unEffT' eff rs ss
   case eResult of
     RSuccess (Just a)  -> return (RSuccess a, stateMods)
-    RSuccess (Nothing) -> return (RFailure $ embedE $ e, stateMods)
+    RSuccess Nothing -> return (RFailure $ embedE $ e, stateMods)
     RFailure sysE      -> return (RFailure sysE, stateMods)
 {-# INLINE effMaybeInWith #-}
 
 effEitherSystemException :: (Monad m, Exception e, InList SystemError es) => EffT' c mods es m (Either e a) -> EffT' c mods es m a
-effEitherSystemException = effEitherInWith (\e -> SystemErrorException $ toException e)
+effEitherSystemException = effEitherInWith $ SystemErrorException . toException

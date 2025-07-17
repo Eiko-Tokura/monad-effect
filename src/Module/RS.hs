@@ -66,7 +66,7 @@ embedStateT action = do
 
 addStateT :: forall s mods errs m c a.
   ( SubList c mods (SModule s : mods)
-  , (SModule s) `NotIn` mods
+  , SModule s `NotIn` mods
   , In' c (SModule s) (SModule s : mods)
   , Monad m
   )
@@ -130,7 +130,7 @@ asksR f = do
 {-# INLINE asksR #-}
 
 localR :: forall r mods errs m c a. (Monad m, In' c (RModule r) mods) => (r -> r) -> EffT' c mods errs m a -> EffT' c mods errs m a
-localR f action = localModule (\(RRead r) -> RRead (f r)) $ action
+localR f = localModule (\(RRead r) -> RRead (f r))
 {-# INLINE localR #-}
 
 getS :: forall s mods errs m c. (Monad m, In' c (SModule s) mods) => EffT' c mods errs m s
