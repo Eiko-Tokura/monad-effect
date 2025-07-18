@@ -22,12 +22,13 @@ module Control.Monad.Effect
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
   , effEitherSystemException
 
-  -- , proofEmbedEffT
+  -- * Concurrency
+  , forkEffT, asyncEffT
+
+  -- * No Error
   , declareNoError
   , checkNoError
-
-  , SystemError(..), NoError
-  , SystemState, SystemRead, SystemEvent, SystemInitData
+  , NoError
 
   -- * Modules
   , Module(..), SystemModule(..)
@@ -35,6 +36,10 @@ module Control.Monad.Effect
   , localModule
   , getModule, getsModule
   , putModule, modifyModule
+
+  -- * System types
+  , SystemState, SystemRead, SystemEvent, SystemInitData
+  , SystemError(..)
 
   -- * Re-exports
   , MonadIO(..)
@@ -45,10 +50,13 @@ module Control.Monad.Effect
   ) where
 
 -- import Control.Parallel.Strategies
+import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Exception as E hiding (TypeError)
+import Control.Monad
+import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.Base
 import Control.Monad.RST
 import Control.Monad.Trans.Control
 import Data.Bifunctor
@@ -199,6 +207,24 @@ instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatc
       Just e' -> handler e'
       Nothing -> effThrowIn $ MonadThrowError e
   {-# INLINE catch #-}
+
+-- | The states on the separate thread will diverge, and will be discarded.
+forkEffT :: forall c mods es m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods es m () -> EffT' c mods NoError m ThreadId
+forkEffT eff = EffT' $ \rs ss -> do
+  -- run the EffT' computation in a separate thread
+  forkedEff <- liftBaseWith $ \runInBase -> forkIO (void $ runInBase $ unEffT' eff rs ss)
+  -- return the ThreadId and the original state
+  return (RSuccess forkedEff, ss)
+{-# INLINE forkEffT #-}
+
+-- | The states on the separate thread will diverge, and will be returned as an Async type.
+asyncEffT
+  :: forall c mods es m a. (MonadIO m, MonadBaseControl IO m)
+  => EffT' c mods es m a -> EffT' c mods NoError m (Async (StM m (Result es a, SystemState c mods)))
+asyncEffT eff = EffT' $ \rs ss -> do
+  asyncEff <- liftBaseWith $ \runInBase -> async (runInBase $ unEffT' eff rs ss)
+  return (RSuccess asyncEff, ss)
+{-# INLINE asyncEffT #-}
 
 -- | embed smaller effect into larger effect
 embedEffT :: forall mods mods' m c es es' a. (SubList c mods mods', SubListEmbed es es', Monad m)
@@ -578,7 +604,7 @@ effEitherWith f eff = case singIfElem @e' @es of
     case eResult of
       RSuccess (Right a) -> return (RSuccess a, stateMods)
       RSuccess (Left e)  -> return (RFailure $ embedES index $ f e, stateMods)
-      RFailure es        -> return (RFailure $ es, stateMods)
+      RFailure es        -> return (RFailure es, stateMods)
 {-# INLINE effEitherWith #-}
 
 -- | Turn an Either return type into the error list, adding the error type if it is not already in the error list.
@@ -642,7 +668,7 @@ effMaybeWith e eff = case singIfElem @e @es of
     case eResult of
       RSuccess (Just a) -> return (RSuccess a, stateMods)
       RSuccess Nothing  -> return (RFailure $ embedES index e, stateMods)
-      RFailure es       -> return (RFailure $ es, stateMods)
+      RFailure es       -> return (RFailure es, stateMods)
 {-# INLINE effMaybeWith #-}
 
 -- | Turn an Maybe return type into the error list
@@ -651,7 +677,7 @@ effMaybeInWith e eff = EffT' $ \rs ss -> do
   (eResult, stateMods) <- unEffT' eff rs ss
   case eResult of
     RSuccess (Just a)  -> return (RSuccess a, stateMods)
-    RSuccess Nothing -> return (RFailure $ embedE $ e, stateMods)
+    RSuccess Nothing -> return (RFailure $ embedE e, stateMods)
     RFailure sysE      -> return (RFailure sysE, stateMods)
 {-# INLINE effMaybeInWith #-}
 
