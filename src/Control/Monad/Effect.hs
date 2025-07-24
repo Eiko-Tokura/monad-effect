@@ -23,7 +23,7 @@ module Control.Monad.Effect
   , effEitherSystemException
 
   -- * Concurrency
-  , forkEffT, asyncEffT
+  , forkEffT, forkEffTSafe, asyncEffT
 
   -- * No Error
   , declareNoError
@@ -47,6 +47,8 @@ module Control.Monad.Effect
   , Identity(..)
   , InList, In'
   , In, InL
+  -- * Result types
+  , Result(..), EList(..)
   ) where
 
 -- import Control.Parallel.Strategies
@@ -209,6 +211,7 @@ instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatc
   {-# INLINE catch #-}
 
 -- | The states on the separate thread will diverge, and will be discarded.
+-- when exception occurs, the thread quits
 forkEffT :: forall c mods es m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods es m () -> EffT' c mods NoError m ThreadId
 forkEffT eff = EffT' $ \rs ss -> do
   -- run the EffT' computation in a separate thread
@@ -216,6 +219,12 @@ forkEffT eff = EffT' $ \rs ss -> do
   -- return the ThreadId and the original state
   return (RSuccess forkedEff, ss)
 {-# INLINE forkEffT #-}
+
+-- | The states on the separate thread will diverge, and will be discarded.
+-- forces you to deal with all the exceptions inside the thread, so the thread won't die in an unexpected way.
+forkEffTSafe :: forall c mods m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods NoError m () -> EffT' c mods NoError m ThreadId
+forkEffTSafe = forkEffT
+{-# INLINE forkEffTSafe #-}
 
 -- | The states on the separate thread will diverge, and will be returned as an Async type.
 asyncEffT
