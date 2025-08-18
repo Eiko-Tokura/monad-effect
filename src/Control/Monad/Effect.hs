@@ -421,17 +421,17 @@ declareNoError eff = eff `effCatchAll` \_es -> error "declareNoError: declared N
 {-# INLINE declareNoError #-}
 
 -- | lift IO action into EffT, catch IOException and return as Left, synonym for effIOSafe
-liftIOException :: IO a -> EffT' c mods '[IOException] IO a
+liftIOException :: MonadIO m => IO a -> EffT' c mods '[IOException] m a
 liftIOException = liftIOAt
 {-# INLINE liftIOException #-}
 
 -- | lift IO and catch a specific type of exception
-liftIOAt :: Exception e => IO a -> EffT' c mods '[e] IO a
+liftIOAt :: (Exception e, MonadIO m) => IO a -> EffT' c mods '[e] m a
 liftIOAt = liftIOSafeWith id
 {-# INLINE liftIOAt #-}
 
 -- | Capture SomeException in IO and turn it into a ErrorText
-liftIOText :: forall s mods c a. (Text -> Text) -> IO a -> EffT' c mods '[ErrorText s] IO a
+liftIOText :: forall s mods m c a. MonadIO m => (Text -> Text) -> IO a -> EffT' c mods '[ErrorText s] m a
 liftIOText err = liftIOSafeWith (\(e :: SomeException) -> ErrorText $ err $ pack $ show e)
 {-# INLINE liftIOText #-}
 
@@ -444,9 +444,9 @@ liftIOPrepend err = liftIOText (err <>)
 {-# INLINE liftIOPrepend #-}
 
 -- | lift IO action into EffT, catch specific type of exception e' into a custom error e
-liftIOSafeWith :: Exception e' => (e' -> e) -> IO a -> EffT' c mods '[e] IO a
+liftIOSafeWith :: (Exception e', MonadIO m) => (e' -> e) -> IO a -> EffT' c mods '[e] m a
 liftIOSafeWith f io = EffT' $ \_ s -> do
-  a :: Either e' a <- E.try io
+  a :: Either e' a <- liftIO $ E.try io
   case a of
     Right a' -> return (RSuccess a', s)
     Left e'  -> return (RFailure $ EHead $ f e', s)

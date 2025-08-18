@@ -48,8 +48,8 @@
 -- * generate run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_ functions
 -- * generate type synonym for ModuleRead <MyModule> and ModuleState <MyModule>
 module Module.RS.QQ
-  ( makeRModule
-  , makeRSModule
+  ( makeRModule,  makeRModule_
+  , makeRSModule, makeRSModule_
   ) where
 
 import Control.DeepSeq (NFData)
@@ -92,35 +92,44 @@ data RSModuleSpec = RSModuleSpec
 --
 -- * A type synonym `type MyModuleRead = ModuleRead MyModule`
 --
-makeRModule :: QuasiQuoter
-makeRModule = QuasiQuoter
+makeRModuleConf :: [DeriveConfig] -> QuasiQuoter
+makeRModuleConf conf = QuasiQuoter
   { quoteExp  = error "makeRModule: should be used as top-level declaration only, not as an expression"
   , quotePat  = error "makeRModule: should be used as top-level declaration only, not as a pattern"
   , quoteType = error "makeRModule: should be used as top-level declaration only, not as a type"
-  , quoteDec  = parseRModule
+  , quoteDec  = parseRModule conf
   }
 
-makeRSModule :: QuasiQuoter
-makeRSModule = QuasiQuoter
+makeRSModuleConf :: [DeriveConfig] -> QuasiQuoter
+makeRSModuleConf conf = QuasiQuoter
   { quoteExp  = error "makeRSModule: should be used as top-level declaration only, not as an expression"
   , quotePat  = error "makeRSModule: should be used as top-level declaration only, not as a pattern"
   , quoteType = error "makeRSModule: should be used as top-level declaration only, not as a type"
-  , quoteDec  = parseRSModule
+  , quoteDec  = parseRSModule conf
   }
 
-parseRModule :: String -> Q [Dec]
-parseRModule input = do
+makeRModule, makeRModule_, makeRSModule, makeRSModule_ :: QuasiQuoter
+makeRModule   = makeRModuleConf [ConfigDeriveGeneric, ConfigDeriveNFData]
+makeRModule_  = makeRModuleConf []
+makeRSModule  = makeRSModuleConf [ConfigDeriveGeneric, ConfigDeriveNFData]
+makeRSModule_ = makeRSModuleConf []
+
+data DeriveConfig = ConfigDeriveGeneric | ConfigDeriveNFData
+  deriving (Show, Eq)
+
+parseRModule :: [DeriveConfig] -> String -> Q [Dec]
+parseRModule conf input = do
   let spec = runIdentity $ runParserT (many parseDataConsSpec) () "parseRModule" input
   case spec of
     Left err -> fail $ "Failed to parse RModule: " ++ show err
-    Right rModuleSpecs -> concat <$> mapM generateRModule rModuleSpecs
+    Right rModuleSpecs -> concat <$> mapM (generateRModule conf) rModuleSpecs
 
-parseRSModule :: String -> Q [Dec]
-parseRSModule input = do
+parseRSModule :: [DeriveConfig] -> String -> Q [Dec]
+parseRSModule conf input = do
   let spec = runIdentity $ runParserT parseRSModuleSpec () "parseRSModule" input
   case spec of
     Left err -> fail $ "Failed to parse RSModule: " ++ show err
-    Right rsModuleSpec -> generateRSModule rsModuleSpec
+    Right rsModuleSpec -> generateRSModule conf rsModuleSpec
 
 parseDataConsSpec :: ParsecT String () Identity DataConsSpec
 parseDataConsSpec = do
@@ -227,8 +236,11 @@ dataInstance DataInstanceSpec{..} =
 -- * generate data instances for Module <MyModule>
 -- * generate run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_ functions
 -- * generate type synonym for ModuleRead <MyModule> and ModuleState <MyModule>
-generateRSModule :: RSModuleSpec -> Q [Dec]
-generateRSModule RSModuleSpec{typeName, readSpec, stateSpec} = do
+generateRSModule :: [DeriveConfig] -> RSModuleSpec -> Q [Dec]
+generateRSModule dconf RSModuleSpec{typeName, readSpec, stateSpec} = do
+  let deriveGeneric = [deriveG  | ConfigDeriveGeneric `elem` dconf]
+      -- deriveNFData  = [deriveNF | ConfigDeriveNFData  `elem` dconf]
+
   let warnStateNonStrict = any (\(_, strictness, _) -> not strictness) (dataFields stateSpec)
 
   when warnStateNonStrict $ reportWarning
@@ -242,13 +254,13 @@ generateRSModule RSModuleSpec{typeName, readSpec, stateSpec} = do
             { dataFamilyType        = ConT ''ModuleRead
             , dataFamilyInputType   = ConT typeName
             , dataFamilyConstructor = readSpec
-            , dataFamilyDerivations = [deriveG]
+            , dataFamilyDerivations = deriveGeneric
             }
         , dataInstance DataInstanceSpec
             { dataFamilyType        = ConT ''ModuleState
             , dataFamilyInputType   = ConT typeName
             , dataFamilyConstructor = stateSpec
-            , dataFamilyDerivations = [deriveG]
+            , dataFamilyDerivations = deriveGeneric
             }
         ]
       typeSynRead  = TySynD (dataConsName readSpec) [] (ConT ''ModuleRead `AppT` ConT typeName)
@@ -435,8 +447,10 @@ runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod m
          , runMyModuleIn_Sig , runMyModuleIn_Fun , inlinePragma runMyModuleIn_Name
          ]
 
-generateRModule :: DataConsSpec -> Q [Dec]
-generateRModule DataConsSpec{dataConsName = modName, dataFields} = do
+generateRModule :: [DeriveConfig] -> DataConsSpec -> Q [Dec]
+generateRModule dconf DataConsSpec{dataConsName = modName, dataFields} = do
+  let deriveGeneric = [deriveG  | ConfigDeriveGeneric `elem` dconf]
+      deriveNFData  = [deriveNF | ConfigDeriveNFData  `elem` dconf]
   ---------------------------------------------------------------------------
   -- Helper names
   ---------------------------------------------------------------------------
@@ -465,13 +479,13 @@ generateRModule DataConsSpec{dataConsName = modName, dataFields} = do
              { dataFamilyType        = ConT ''ModuleRead
              , dataFamilyInputType   = ConT modName
              , dataFamilyConstructor = DataConsSpec { dataConsName = readConName, dataFields = dataFields }
-             , dataFamilyDerivations = [deriveG]
+             , dataFamilyDerivations = deriveGeneric
              }
         , dataInstance DataInstanceSpec
              { dataFamilyType        = ConT ''ModuleState
              , dataFamilyInputType   = ConT modName
              , dataFamilyConstructor = DataConsSpec { dataConsName = stateConName, dataFields = [] }
-             , dataFamilyDerivations = [deriveG, deriveNF]
+             , dataFamilyDerivations = deriveGeneric <> deriveNFData
              }
         ]
 
@@ -480,13 +494,13 @@ generateRModule DataConsSpec{dataConsName = modName, dataFields} = do
             { dataFamilyType        = ConT ''ModuleEvent
             , dataFamilyInputType   = ConT modName
             , dataFamilyConstructor = DataConsSpec { dataConsName = eventConName, dataFields = [] }
-            , dataFamilyDerivations = [deriveG, deriveNF]
+            , dataFamilyDerivations = deriveGeneric <> deriveNFData
             }
         , dataInstance DataInstanceSpec
             { dataFamilyType        = ConT ''ModuleInitData
             , dataFamilyInputType   = ConT modName
             , dataFamilyConstructor = DataConsSpec { dataConsName = initDataConName, dataFields = appendName "Init" <$> dataFields }
-            , dataFamilyDerivations = [deriveG]
+            , dataFamilyDerivations = deriveGeneric
             }
         ]
 
