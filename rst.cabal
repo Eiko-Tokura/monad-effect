@@ -113,6 +113,7 @@ library
                       , DataKinds
                       , GADTs
                       , LambdaCase
+                      , LinearTypes
                       , TypeFamilies
                       , TypeApplications
                       , TemplateHaskell
