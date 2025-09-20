@@ -115,8 +115,8 @@ library
                     , monad-control < 1.1
                     , resourcet < 1.4
                     , transformers-base < 0.5
-                    , template-haskell
-                    , deepseq
+                    , template-haskell < 2.24
+                    , deepseq < 1.6
                     , parsec >=3 && < 4
                     , haskell-src-meta >= 0.8 && < 0.9
 
