@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" height="172" width="960.0" font-size="16" font-family="sans-serif" stroke-width="2">
+<g transform="translate(10.0 0)">
+<g fill="hsl(0, 100%, 40%)">
+<text y="22">nondet.shallow.32.heftia</text>
+<text y="22" x="897.1987065906068" text-anchor="end">1.95 ms</text>
+</g>
+<g>
+<title>1.95 ms ±  93 μs</title>
+<rect y="28" rx="5" height="22" width="897.1987065906068" fill="hsl(0, 100%, 80%)" stroke="hsl(0, 100%, 55%)" />
+<g stroke="hsl(0, 100%, 40%)"><line x1="854.3974131812136" x2="940.0" y1="39" y2="39" />
+<line x1="854.3974131812136" x2="854.3974131812136" y1="33" y2="45" />
+<line x1="940.0" x2="940.0" y1="33" y2="45" />
+</g>
+</g>
+<g fill="hsl(120, 100%, 40%)">
+<text y="77">nondet.shallow.32.fused</text>
+<text y="77" x="330.19723372068694" text-anchor="end">718  μs</text>
+</g>
+<g>
+<title>718  μs ±  44 μs</title>
+<rect y="83" rx="5" height="22" width="330.19723372068694" fill="hsl(120, 100%, 80%)" stroke="hsl(120, 100%, 55%)" />
+<g stroke="hsl(120, 100%, 40%)"><line x1="309.93570073804244" x2="350.45876670333143" y1="94" y2="94" />
+<line x1="309.93570073804244" x2="309.93570073804244" y1="88" y2="100" />
+<line x1="350.45876670333143" x2="350.45876670333143" y1="88" y2="100" />
+</g>
+</g>
+<g fill="hsl(240, 100%, 40%)">
+<text y="132">nondet.shallow.32.mtl-logict</text>
+<text y="132" x="321.96746081437186" text-anchor="end">700  μs</text>
+</g>
+<g>
+<title>700  μs ±  52 μs</title>
+<rect y="138" rx="5" height="22" width="321.96746081437186" fill="hsl(240, 100%, 80%)" stroke="hsl(240, 100%, 55%)" />
+<g stroke="hsl(240, 100%, 40%)"><line x1="297.87837368042904" x2="346.0565479483147" y1="149" y2="149" />
+<line x1="297.87837368042904" x2="297.87837368042904" y1="143" y2="155" />
+<line x1="346.0565479483147" x2="346.0565479483147" y1="143" y2="155" />
+</g>
+</g>
+</g>
+</svg>

@@ -42,6 +42,9 @@ programMonadEffect = do
         else do
             ME.putS (x - 1)
             programMonadEffect
+#ifdef NOINLINE
+{-# NOINLINE programMonadEffect #-}
+#endif
 
 programMonadEffectDeep :: ME.EffT 
   [ ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule (), ME.RModule ()
@@ -77,7 +80,9 @@ programHeftia = do
         else do
             H.put (x - 1)
             programHeftia
-{-# SPECIALIZE programHeftia :: H.Eff '[H.State Int] Int #-}
+#ifdef NOINLINE
+{-# NOINLINE programHeftia #-}
+#endif
 
 countdownHeftia :: Int -> (Int, Int)
 countdownHeftia n = H.runPure $ H.runState n programHeftia
@@ -103,7 +108,9 @@ programFreer = do
         else do
             FS.put (x - 1)
             programFreer
+#ifdef NOINLINE
 {-# NOINLINE programFreer #-}
+#endif
 
 countdownFreer :: Int -> (Int, Int)
 countdownFreer n = FS.run $ FS.runState n programFreer
@@ -122,7 +129,9 @@ programSem = do
         else do
             P.put (x - 1)
             programSem
+#ifdef NOINLINE
 {-# NOINLINE programSem #-}
+#endif
 
 countdownSem :: Int -> (Int, Int)
 countdownSem n = P.run $ P.runState n programSem
@@ -140,7 +149,9 @@ programFused = do
         else do
             F.put (x - 1)
             programFused
+#ifdef NOINLINE
 {-# NOINLINE programFused #-}
+#endif
 
 countdownFused :: Int -> (Int, Int)
 countdownFused n = F.run $ F.runState n programFused
@@ -158,7 +169,9 @@ programEffectful = do
         else do
             EL.put (x - 1)
             programEffectful
-{-# SPECIALIZE programEffectful :: EL.Eff '[EL.State Int] Int #-}
+#ifdef NOINLINE
+{-# NOINLINE programEffectful #-}
+#endif
 
 countdownEffectful :: Int -> (Int, Int)
 countdownEffectful n = EL.runPureEff $ EL.runStateLocal n programEffectful
@@ -178,6 +191,9 @@ programEff = do
         else do
             EF.put (x - 1)
             programEff
+#ifdef NOINLINE
+{-# NOINLINE programEff #-}
+#endif
 
 countdownEff :: Int -> (Int, Int)
 countdownEff n = EF.run $ EF.runState n programEff
@@ -196,6 +212,9 @@ programMtl = do
         else do
             M.put (x - 1)
             programMtl
+#ifdef NOINLINE
+{-# NOINLINE programMtl #-}
+#endif
 
 countdownMtl :: Int -> (Int, Int)
 countdownMtl = M.runState programMtl

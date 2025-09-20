@@ -27,9 +27,9 @@ import Effectful.Reader.Dynamic qualified as EL
 import Polysemy qualified as P
 import Polysemy.Error qualified as P
 import Polysemy.Reader qualified as P
-#ifdef VERSION_eff
-import "eff" Control.Effect qualified as E
-#endif
+
+
+
 
 programMonadEffect :: Int -> ME.EffT mods '[ErrorValue "()" ()] ME.Identity ()
 programMonadEffect = \case
@@ -38,9 +38,9 @@ programMonadEffect = \case
 {-# NOINLINE programMonadEffect #-}
 
 catchMonadEffect :: Int -> Either () ()
-catchMonadEffect n = (first $ \(ErrorValue s) -> s) . ME.runIdentity . ME.runEffT01 $ programMonadEffect n
+catchMonadEffect n = first (\(ErrorValue s) -> s) . ME.runIdentity . ME.runEffT01 $ programMonadEffect n
 
-catchMonadEffectDeep :: Int -> (Result '[ErrorValue "()" ()] ())
+catchMonadEffectDeep :: Int -> Result '[ErrorValue "()" ()] ()
 catchMonadEffectDeep n = ME.runIdentity $ ME.runEffT_
   (FData10 (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ())
            (RRead ()) (RRead ()) (RRead ()) (RRead ()) (RRead ())
@@ -113,21 +113,21 @@ catchEffectfulDeep n =
   where
     run = EL.runReader ()
 
-#ifdef VERSION_eff
-programEff :: (E.Error () E.:< es) => Int -> E.Eff es a
-programEff = \case
-    0 -> E.throw ()
-    n -> E.catch (programEff (n - 1)) \() -> E.throw ()
-{-# NOINLINE programEff #-}
 
-catchEff :: Int -> Either () ()
-catchEff n = E.run $ E.runError $ programEff n
 
-catchEffDeep :: Int -> Either () ()
-catchEffDeep n = E.run $ run $ run $ run $ run $ run $ E.runError $ run $ run $ run $ run $ run $ programEff n
-  where
-    run = E.runReader ()
-#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 programMtl :: (M.MonadError () m) => Int -> m a
 programMtl = \case

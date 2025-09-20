@@ -51,6 +51,23 @@ extra-doc-files:    CHANGELOG.md
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
 
+flag benchO0
+  description: Compile benchmarks with -O0
+  default: False
+  manual: True
+flag benchO1
+  description: Compile benchmarks with -O1
+  default: False
+  manual: True
+flag benchO2
+  description: Compile benchmarks with -O2
+  default: False
+  manual: True
+flag noinline
+  description: Disable inlining for Countdown benchmark
+  default: False
+  manual: True
+
 common warnings
     ghc-options: -Wall -j8
 
@@ -166,8 +183,17 @@ benchmark monad-effect-bench
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -fconstraint-solver-iterations=16 -O2 -v -flate-dmd-anal -fmax-worker-args=16
-    -- -O2 -flate-dmd-anal
+    ghc-options: -fconstraint-solver-iterations=16
+    -- -ddump-simpl -ddump-to-file -dsuppress-all 
+
+    if flag(benchO0)
+      ghc-options: -O0 -v -fmax-worker-args=16
+    if flag(benchO2)
+      ghc-options: -O2 -v -flate-dmd-anal -fmax-worker-args=16
+    if flag(benchO1)
+      ghc-options: -O1 -v -fmax-worker-args=16
+    if flag(noinline)
+      cpp-options: -DNOINLINE
 
     -- Base language which the package is written in.
     default-language: GHC2021
