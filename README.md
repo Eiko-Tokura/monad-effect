@@ -47,7 +47,7 @@ But there are some problems with `Maybe` and `Either`:
 
   - On the other hand, `ExceptT e (StateT s m) a` is isomorphic to `StateT s m (Either e a)`, which desugars to
 
-    `s -> m (Either e a, s)`. This is the more 'correct' behavior, during the computation once you have an exception, the state until the exception steop is preserved.
+    `s -> m (Either e a, s)`. This is the more 'correct' behavior, during the computation once you have an exception, the state until the exception step is preserved.
 
 To solve all these problems, we made the following designs:
 
@@ -73,7 +73,7 @@ To solve all these problems, we made the following designs:
 
 ### **Purity**
 
-Instead of giving up purity and using `IORef` or `TVar` for every state, we allow the possibility of having pure states in the effect modules. We also provide two built-in modules: `SModule s` is a module that holds a pure state of type `s`, and `RModule r` is a module that holds a read-only value of type `r`. You can use these modules to store pure states and read-only values in the effect system.
+Instead of giving up purity and using `IORef` or `TVar` for every state, we allow the possibility of having pure states in the effect modules. We also provide two built-in modules: `SModule s` is a module that holds a pure state of type `s`, and `RModule r` is a module that holds a read-only value of type `r`. You can use these modules to store pure states and read-only values in the effect system. There are also template haskell functions for easily generating modules in `Module.RS.QQ`.
 
 Let's see a simple example that combines the use of `SModule` and algebraic exceptions:
 
@@ -391,6 +391,70 @@ computeAverageFromFile fp = do
 
   return $ sum parsed / fromIntegral (length parsed)
 ```
+
+## Template Haskell Utilities For Simple Effect Modules
+
+In `Module.RS.QQ`, we provide some Template Haskell utilities for easily generating simple reader modules, state modules, and reader-state modules.
+
+The `makeRModule` function generates a reader module, for example
+
+given the following information:
+
+```haskell
+[makeRModule|MyModule
+  myRecord1 :: !MyType1
+  myRecord2 :: MyType2
+|]
+```
+
+it should generate
+
+```haskell
+data MyModule
+
+type MyModuleRead = ModuleRead MyModule
+
+instance Module MyModule where
+  data ModuleRead MyModule  = MyModuleRead { myRecord1 :: !MyType1, myRecord2 :: MyType2 }
+  data ModuleState MyModule = MyModuleState deriving (Generic, NFData)
+
+runMyModule :: (ConsFDataList c mods, Monad m) => ModuleRead MyModule -> EffT' c (MyModule : mods) errs m a -> EffT' mods errs m a
+runMyModule r = runEffTOuter_ r MyModuleState
+{-# INLINE runMyModule #-}
+
+runRModuleIn :: (ConsFDataList c mods, RemoveElem c mods, Monad m, In' c MyModule mods) => ModuleRead MyModule -> EffT' c mods es m a -> EffT' c (Remove (FirstIndex MyModule mods) mods) es m a
+runRModuleIn r = runEffTIn_ r MyModuleState
+{-# INLINE runMyModuleIn #-}
+
+-- It also generates obvious instances for `ModuleEvent` and `ModuleInitData`.
+-- If this is to be avoided, currently you have to write your own module declaration.
+-- We wish to customize the behavior in the future.
+```
+
+If you don't want the `derive (Generic, NFData)`, use `makeRModule_` instead.
+
+Another function `makeRSModule` generates a reader-state module, for example
+
+```haskell
+[makeRSModule|
+MyRSModule
+  Read  myField1 :: !MyType1
+  Read  myField2 :: MyType2
+  State myStateField1 :: !MyStateType1
+  State myStateField2 :: MyStateType2
+|]
+```
+
+it should generate
+
+* data MyRSModule
+* generate data instances for Module `<MyModule>`
+* generate `run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_` functions
+* generate type synonym for `type MyModuleRead = ModuleRead <MyModule>` and `type MyModuleState = ModuleState <MyModule>`
+
+Similarly, if you don't want the deriving behavior, use `makeRSModule_` instead.
+
+Caveat: unfortunately, currently you can't have type variables in the module type constructor when you use the template haskell utilitys, currently you have to write your own module declaration. We wish to add support for this in the future.
 
 ## Some Benchmarks
 
