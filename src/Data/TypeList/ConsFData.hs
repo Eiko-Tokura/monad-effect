@@ -47,23 +47,11 @@ class
   )
   => ConsFDataList flist ts
 
-pattern (:**) :: ConsFData flist => f t -> flist f ts -> flist f (t : ts)
-pattern (:**) x xs <- (unConsF -> (x, xs)) where
-  y :** ys = consF y ys
-{-# COMPLETE (:**) #-}
-infixr 1 :**
-
-pattern (:***) :: (NonEmpty ts ~ True, ConsFDataList flist ts) => f (Head ts) -> flist f (Tail ts) -> flist f ts
-pattern (:***) x xs <- (unConsFData -> (x, xs)) where
-  y :*** ys = consF0 y ys
-{-# COMPLETE (:***) #-}
-infixr 1 :***
-
 -- | Get an element from a finite list using an element proof.
 getE :: ConsFData flist => Elem e l -> flist f l -> f e
-getE  EZ    = \(x :** _)  -> x
-getE (ES n) = \(_ :** xs) -> getE n xs
+getE  EZ    = \(unConsF -> (x, _))  -> x
+getE (ES n) = \(unConsF -> (_, xs)) -> getE n xs
 
 putE :: ConsFData flist => Elem e l -> f e -> flist f l -> flist f l
-putE EZ     x' (_ :** xs) = x' :** xs
-putE (ES n) y' (x :** xs) = x :** putE n y' xs
+putE EZ     x' (unConsF -> (_, xs)) = x' `consF` xs
+putE (ES n) y' (unConsF -> (x, xs)) = x  `consF` putE n y' xs

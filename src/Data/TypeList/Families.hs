@@ -1,5 +1,7 @@
 {-# LANGUAGE UndecidableSuperClasses, PatternSynonyms, ViewPatterns, AllowAmbiguousTypes, UndecidableInstances, DataKinds, TypeOperators, LinearTypes, TypeFamilies, GADTs, PolyKinds, ScopedTypeVariables, ImpredicativeTypes #-}
 -- | This module provides the fundational types and type families
+--
+-- This module is considered INTERNAL, you can use it but be aware that the API may change without major version bumps.
 module Data.TypeList.Families where
 
 import Data.Kind (Type, Constraint)

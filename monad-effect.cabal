@@ -87,11 +87,8 @@ library
                     , Control.System.EventLoop
                     , Data.Result
                     , Data.TypeList
-                    , Data.TypeList.ConsFData
                     , Data.TypeList.FData
                     , Data.TypeList.FData.TH
-                    , Data.TypeList.FList
-                    , Data.TypeList.UList
                     , Data.TypeList.Families
                     , Module.RS
                     , Module.RS.QQ
@@ -100,8 +97,10 @@ library
 
                     -- , Control.Monad.Effect.Concurrent
     -- Modules included in this library but not exported.
-    -- other-modules:
-
+    other-modules: Data.TypeList.ConsFData
+                 , Data.TypeList.ConsFData.Pattern
+                 , Data.TypeList.FList
+                 , Data.TypeList.UList
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 

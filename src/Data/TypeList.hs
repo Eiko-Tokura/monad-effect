@@ -2,6 +2,8 @@
 -- | This module provides utilities for working with type-level lists in Haskell.
 -- It defines various types and functions to manipulate type-level lists, including
 -- finite lists, constrained lists, and dynamic lists.
+--
+-- This module is considered INTERNAL, you can use it but be aware that the API may change without major version bumps.
 module Data.TypeList
   ( module Data.TypeList.FList
   , module Data.TypeList.UList
@@ -15,6 +17,7 @@ import Data.TypeList.Families
 import Data.TypeList.FList
 import Data.TypeList.UList
 import Data.TypeList.ConsFData
+import Data.TypeList.ConsFData.Pattern
 import Data.Type.Equality
 import Data.Result
 import Data.Kind

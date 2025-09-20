@@ -2,7 +2,9 @@
 -- | The `FData` type family is a fast replacement for `FList`, the heterogeneous list.
 -- it builds a data structure using data family instead of GADT, which is very efficient
 --
--- instances are generated using Template Haskell for up to 16 elements.
+-- instances are generated using Template Haskell for up to 20 elements.
+--
+-- This module is considered INTERNAL, you can use it but be aware that the API may change without major version bumps.
 module Data.TypeList.FData
   ( FData(..), FDataByIndex(..)
   , module Data.TypeList
@@ -20,7 +22,7 @@ import Data.Default
 data family FData (f :: k -> Type) (ts :: [k]) :: Type
 data instance FData f '[] = FData0
 
-$(generateFDataInstances [1..16])
+$(generateFDataInstances [1..20])
 
 type instance FDataConstraint FData e ts = (FDataByIndex (FirstIndex e ts) ts)
 
@@ -46,11 +48,11 @@ instance ConsFNil FData where
   fNil = FData0
   {-# INLINE fNil #-}
 
-$(generateUnconsFDataInstances [1..16])
-$(generateConsFData0Instances [1..16])
-$(generateConsFData1Instances [0..15])
-$(generateRemoveElemInstances [1..16])
-$(generateFDataByIndexInstances [(j, i) | i <- [1..16], j <- [0..i-1]])
+$(generateUnconsFDataInstances [1..20])
+$(generateConsFData0Instances [1..20])
+$(generateConsFData1Instances [0..19])
+$(generateRemoveElemInstances [1..20])
+$(generateFDataByIndexInstances [(j, i) | i <- [1..20], j <- [0..i-1]])
 
 -- for reference, the generated instances look like this:
 --

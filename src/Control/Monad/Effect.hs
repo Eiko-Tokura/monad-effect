@@ -1,5 +1,8 @@
-{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, LinearTypes #-}
--- | The module you should import to use for effectful computation
+{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, PatternSynonyms, LinearTypes #-}
+-- | Module: Control.Monad.Effect
+-- Description: The module you should import to use for effectful computation
+--
+-- This module provides the EffT monad transformer and various functions to work with it.
 module Control.Monad.Effect
   ( -- * EffTectful computation
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
@@ -47,6 +50,8 @@ module Control.Monad.Effect
   , Identity(..)
   , InList, In'
   , In, InL
+  , module Data.TypeList.ConsFData.Pattern
+  , fNil
   -- * Result types
   , Result(..), EList(..)
   ) where
@@ -70,6 +75,7 @@ import Data.Text (Text, unpack, pack)
 import Data.Type.Equality
 import Data.TypeList
 import Data.TypeList.FData
+import Data.TypeList.ConsFData.Pattern
 import GHC.TypeError
 import GHC.TypeLits
 

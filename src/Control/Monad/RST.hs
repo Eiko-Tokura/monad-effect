@@ -1,11 +1,11 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use first" #-}
--- | This module provides a monadic structure for handling state and
+-- | This module provides a simplistic monadic structure for handling state and
 -- reading from a shared environment. It defines the 'RS' and 'RST'
--- types, which allow for a combination of stateful computations and
--- read operations in a flexible manner.
+-- types
 --
--- It also provides two interface MonadReadable and MonadStateful for
+-- It also provides two interface MonadReadable and MonadStateful, unlike MonadReader
+-- and MonadState, these interfaces do not have functional dependencies, allowing for
 -- simple and extensible state and read effects.
 module Control.Monad.RST
   ( RS(..), RST(..), runRST
@@ -16,16 +16,12 @@ module Control.Monad.RST
   , getsE, putsE, queriesE, Elem(..), HList
   , embedRST, getAll, queryAll
   , fillR
-  -- , fillS
   , fillS'
-
-  -- * Error handling capable
-  -- , RSE(..), RSET(..), runRSET
-  -- , embedRSET, catchE, catchAll, throwE
   ) where
 
 -- import Data.Bifunctor
 import Data.TypeList
+import Data.TypeList.ConsFData.Pattern
 import Control.Monad.Trans
 import Control.Monad.IO.Class
 

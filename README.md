@@ -164,7 +164,7 @@ data instance FData f '[t1, t2, t3, t4, t5] = FData5
 
 This is much more performant than a list (which GHC cannot inline recursive functions operating on it), and GHC optimizes it very well. The performance of `FData` over `FList` is about `5~100` times faster!
 
-Of course we did not write the instances by hand, rather we used Template Haskell to generate all the instances including the methods to extract values from the data structure and to update/compose them. Currently we generated instances up to 15 types in the list, which should be more than enough. (Remark: the error type `es` does not live in `FData` and have no limit).
+Of course we did not write the instances by hand, rather we used Template Haskell to generate all the instances including the methods to extract values from the data structure and to update/compose them. Currently we generated instances up to 19 types in the list, which should be more than enough. (Remark: the error type `es` does not live in `FData` and have no limit).
 
 A count-down benchmark shows that `EffT` is 25 times faster than `StateT` without optimization, and as fast as a `StateT` with correct optimization (`-O2 -flate-dmd-anal`, for which both optimizes to a really fast simple loop!)
 
@@ -200,8 +200,8 @@ testMtlState = do
 main = defaultMain
     [ bgroup "State Effect Eff"
       [ bench "FList" $ whnfIO $ runEffTNoError
-          (RRead () `FCons` SRead `FCons` SRead `FCons` FNil)
-          (RState `FCons` SState 0 `FCons` SState False `FCons` FNil)
+          (RRead () :*** SRead :*** SRead :*** FNil)
+          (RState :*** SState 0 :*** SState False :*** FNil)
           testEffStateFPoly
       , bench "FData" $ whnfIO $ runEffTNoError
           (FData3 (RRead ()) SRead SRead)
@@ -213,6 +213,8 @@ main = defaultMain
       ]
     ]
 ```
+
+Here `:***` is a pattern synonym, you can use it to replace `FCons` and even use it in pattern matching `FData` or constructing `FData`, with `fNil` being a polymorphic empty container.
 
 Tested on my laptop with GHC 9.12.2:
 
