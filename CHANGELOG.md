@@ -1,5 +1,5 @@
-# Revision history for rst
+# Revision history for monad-effect
 
-## 0.1.0.0 -- YYYY-mm-dd
+## 0.1.0.0 -- 2025-09-20
 
-* First version. Released on an unsuspecting world.
+* First release of monad-effect

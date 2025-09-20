@@ -1,5 +1,7 @@
 # A lightweight, fast, and algebraic effect system that makes sense
 
+This project is in experimental beta, it may change relatively quickly. I will definitely improve it when I use it more in other projects. Feedbacks and contributions are welcome!
+
 ## The `EffT` Monad Transformer
 
 The core type of the library is the `EffT` monad transformer, which can be understood as follows:
@@ -389,3 +391,25 @@ computeAverageFromFile fp = do
 
   return $ sum parsed / fromIntegral (length parsed)
 ```
+
+## Some Benchmarks
+
+See the `benchmark` folder for more benchmarks. The benchmarks are copied from `heftia`, another effect system library and I added some modified versions.
+
+#### Countdown `-O2`
+![Countdown-O2](./benchmark/bench-result-O2/countdown-deep.svg)
+
+#### Countdown `-O0`
+![Countdown-O0](./benchmark/bench-result-O0/countdown-deep.svg)
+
+#### Deep Catch `-O2`
+![Catch-O2](./benchmark/bench-result-O2/catch-deep.svg)
+
+#### Deep Catch `-O0`
+![Catch-O0](./benchmark/bench-result-O0/catch-deep.svg)
+
+#### Local State `-O2`
+![Local-O2](./benchmark/bench-result-O2/local-deep.svg)
+
+#### Local State `-O0`
+![Local-O0](./benchmark/bench-result-O0/local-deep.svg)

@@ -23,10 +23,13 @@ name:               monad-effect
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
-synopsis:  A lightweight effect management monad transformer that makes sense.
+synopsis:  A fast and lightweight effect system.
 
 -- A longer description of the package.
--- description:
+description:
+        A fast and lightweight effect system.
+        It provides a way to define and handle effects and exceptions in a modular and composable way.
+        Main features: moduled effects, algebraic exceptions, pure effects, very good performance.
 
 -- The license under which the package is released.
 license:            BSD-3-Clause
@@ -51,6 +54,23 @@ extra-doc-files:    CHANGELOG.md
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
 
+flag benchO0
+  description: Compile benchmarks with -O0
+  default: False
+  manual: True
+flag benchO1
+  description: Compile benchmarks with -O1
+  default: False
+  manual: True
+flag benchO2
+  description: Compile benchmarks with -O2
+  default: False
+  manual: True
+flag noinline
+  description: Disable inlining for Countdown benchmark
+  default: False
+  manual: True
+
 common warnings
     ghc-options: -Wall -j8
 
@@ -58,6 +78,8 @@ library
     -- Import common warning flags.
     import:           warnings
 
+    -- | This is a small library that gets benefit from inlining and specialisation.
+    -- therefore we turn on these optimisations
     ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -flate-dmd-anal
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.Effect
@@ -85,20 +107,19 @@ library
 
     -- Other library packages from which modules are imported.
     build-depends:    base >= 4 && < 5
-                    , async
+                    , async < 2.4
                     , data-default
-                    , mtl
-                    , stm
-                    , text
-                    , exceptions
-                    , monad-control
-                    , resourcet
-                    , transformers-base
-                    , fusion-plugin-types
+                    , mtl < 2.4
+                    , stm < 2.6
+                    , text < 2.2
+                    , exceptions < 0.11
+                    , monad-control < 1.1
+                    , resourcet < 1.4
+                    , transformers-base < 0.5
                     , template-haskell
                     , deepseq
-                    , parsec
-                    , haskell-src-meta
+                    , parsec >=3 && < 4
+                    , haskell-src-meta >= 0.8 && < 0.9
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -159,15 +180,23 @@ test-suite monad-effect-test
       , containers
       , text
       , mtl
-      , fusion-plugin
       , parsec
 
 benchmark monad-effect-bench
     -- Import common warning flags.
     import:           warnings
 
-    ghc-options: -ddump-simpl -ddump-to-file -dsuppress-all -fconstraint-solver-iterations=16 -O2 -v -flate-dmd-anal -fmax-worker-args=16
-    -- -O2 -flate-dmd-anal
+    ghc-options: -fconstraint-solver-iterations=16
+    -- -ddump-simpl -ddump-to-file -dsuppress-all 
+
+    if flag(benchO0)
+      ghc-options: -O0 -v -fmax-worker-args=16
+    if flag(benchO2)
+      ghc-options: -O2 -v -flate-dmd-anal -fmax-worker-args=16
+    if flag(benchO1)
+      ghc-options: -O1 -v -fmax-worker-args=16
+    if flag(noinline)
+      cpp-options: -DNOINLINE
 
     -- Base language which the package is written in.
     default-language: GHC2021

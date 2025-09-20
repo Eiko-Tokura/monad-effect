@@ -18,6 +18,8 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import System.Posix (fileSize, getFileStatus)
 
+import qualified Control.Monad.Effect as ME
+
 -- effectful
 import Effectful qualified as E
 import Effectful.Dispatch.Dynamic qualified as E
