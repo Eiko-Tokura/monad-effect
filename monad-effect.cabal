@@ -16,7 +16,7 @@ synopsis:  A fast and lightweight effect system.
 description:
         A fast and lightweight effect system.
         It provides a way to define and handle effects and exceptions in a modular and composable way.
-        Main features: moduled effects, algebraic exceptions, pure effects, very good performance.
+        Main features: moduled effects, algebraic exceptions, pure states, and good performance.
 
 -- The license under which the package is released.
 license:            BSD-3-Clause
