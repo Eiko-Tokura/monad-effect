@@ -523,6 +523,10 @@ noCounter SampleCounter           = pure (CounterSample 0)
 {-# INLINE noCounter #-}
 ```
 
+## Flags
+
+Use `-fconstraint-solver-iterations=16` or `19` to avoid some type checker issues.
+
 ## Some Benchmarks
 
 See the `benchmark` folder for more benchmarks. The benchmarks are copied from `heftia`, another effect system library and I added some modified versions.
