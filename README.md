@@ -459,7 +459,7 @@ Caveat: unfortunately, currently you can't have type variables in the module typ
 
 ## Style
 
-`monad-effect` does not make the choice of how you should structure your effects. You can put configs, pure states, enviroments, handlers, into your effect module. You can make the effect module coupled to a particular implementation for convenience and speed, and if you want to enforce the algebraic effect style where the effects and interpreters are decoupled, it can be written this way for example, it is all up to you:
+`monad-effect` does not make the choice of how you should structure your effects. You can put configs, pure states, enviroments, handlers, into your effect module. You can make the effect module coupled to a particular implementation for convenience and speed, or if you want to enforce the algebraic effect style where the effects and interpreters are decoupled, it can be written this way for example, it is all up to you:
 
 ```haskell
 {-# LANGUAGE DataKinds, TypeFamilies, RequiredTypeArguments #-}
@@ -532,19 +532,19 @@ Use `-fconstraint-solver-iterations=16` or `19` to avoid some type checker issue
 See the `benchmark` folder for more benchmarks. The benchmarks are copied from `heftia`, another effect system library and I added some modified versions.
 
 #### Countdown `-O2`
-![Countdown-O2](./benchmark/bench-result-O2/countdown-deep.svg)
+![Countdown-O2](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O2/countdown-deep.svg)
 
 #### Countdown `-O0`
-![Countdown-O0](./benchmark/bench-result-O0/countdown-deep.svg)
+![Countdown-O0](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O0/countdown-deep.svg)
 
 #### Deep Catch `-O2`
-![Catch-O2](./benchmark/bench-result-O2/catch-deep.svg)
+![Catch-O2](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O2/catch-deep.svg)
 
 #### Deep Catch `-O0`
-![Catch-O0](./benchmark/bench-result-O0/catch-deep.svg)
+![Catch-O0](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O0/catch-deep.svg)
 
 #### Local State `-O2`
-![Local-O2](./benchmark/bench-result-O2/local-deep.svg)
+![Local-O2](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O2/local-deep.svg)
 
 #### Local State `-O0`
-![Local-O0](./benchmark/bench-result-O0/local-deep.svg)
+![Local-O0](https://raw.githubusercontent.com/Eiko-Tokura/monad-effect/3aeceddb0c7e452b34032b404a5fdc068df322de/benchmark/bench-result-O0/local-deep.svg)
