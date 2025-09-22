@@ -458,6 +458,72 @@ Similarly, if you don't want the deriving behavior, use `makeRSModule_` instead.
 
 Caveat: unfortunately, currently you can't have type variables in the module type constructor when you use the template haskell utilitys, currently you have to write your own module declaration. We wish to add support for this in the future.
 
+## Style
+
+`monad-effect` does not make the choice of how you should structure your effects. You can put configs, pure states, enviroments, handlers, into your effect module. You can make the effect module coupled to a particular implementation for convenience and speed, and if you want to enforce the algebraic effect style where the effects and interpreters are decoupled, it can be written this way for example, it is all up to you:
+
+```haskell
+{-# LANGUAGE DataKinds, TypeFamilies, RequiredTypeArguments #-}
+module Module.Prometheus.Counter where
+
+import Control.Monad.Effect
+import System.Metrics.Prometheus.Metric.Counter as C
+
+-- | A prometheus counter module that has a name
+data PrometheusCounter (name :: k)
+
+-- | Counter effects written in algebraic effect style
+data PrometheusCounterEffect a where
+  AddAndSampleCounter :: Int -> PrometheusCounterEffect CounterSample
+  AddCounter          :: Int -> PrometheusCounterEffect ()
+  IncCounter          ::        PrometheusCounterEffect ()
+  SetCounter          :: Int -> PrometheusCounterEffect ()
+  SampleCounter       ::        PrometheusCounterEffect CounterSample
+
+-- | The effect handler type for a prometheus counter with given counter name
+type PrometheusCounterHandler (name :: k) = forall c mods es m a. (In' c (PrometheusCounter name) mods, MonadIO m) => PrometheusCounterEffect a -> EffT' c mods es m a
+
+-- | The module is declared as a reader module that carries a counter handler
+instance Module (PrometheusCounter name) where
+  newtype ModuleRead  (PrometheusCounter name) = PrometheusCounterRead { prometheusCounterHandler :: PrometheusCounterHandler name }
+  data    ModuleState (PrometheusCounter name) = PrometheusCounterState
+
+-- | Specify / interpret a counter effect with given counter name
+runPrometheusCounter
+  :: forall name
+  -> ( ConsFDataList c (PrometheusCounter name : mods)
+     , Monad m
+     )
+  => PrometheusCounterHandler name -> EffT' c (PrometheusCounter name ': mods) es m a -> EffT' c mods es m a
+runPrometheusCounter name handler = runEffTOuter_ (PrometheusCounterRead @_ @name handler) PrometheusCounterState
+{-# INLINE runPrometheusCounter #-}
+
+-- | Carry out a counter effect with given counter name
+prometheusCounterEffect :: forall name -> (In' c (PrometheusCounter name) mods, MonadIO m) => PrometheusCounterEffect a -> EffT' c mods es m a
+prometheusCounterEffect name eff = do
+  PrometheusCounterRead handler <- askModule @(PrometheusCounter name)
+  handler eff
+{-# INLINE prometheusCounterEffect #-}
+
+-- | Use a specific counter to carry out a counter effect
+useCounter :: Counter -> PrometheusCounterHandler name
+useCounter counter IncCounter              = liftIO $ C.inc counter
+useCounter counter (AddCounter n)          = liftIO $ C.add n counter
+useCounter counter (SetCounter n)          = liftIO $ C.set n counter
+useCounter counter (AddAndSampleCounter n) = liftIO $ C.addAndSample n counter
+useCounter counter SampleCounter           = liftIO $ C.sample counter
+{-# INLINE useCounter #-}
+
+-- | A counter handler that does nothing
+noCounter :: Monad m => PrometheusCounterEffect a -> EffT mods es m a
+noCounter IncCounter              = pure ()
+noCounter (AddCounter _)          = pure ()
+noCounter (SetCounter _)          = pure ()
+noCounter (AddAndSampleCounter _) = pure (CounterSample 0)
+noCounter SampleCounter           = pure (CounterSample 0)
+{-# INLINE noCounter #-}
+```
+
 ## Some Benchmarks
 
 See the `benchmark` folder for more benchmarks. The benchmarks are copied from `heftia`, another effect system library and I added some modified versions.
