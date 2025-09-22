@@ -48,13 +48,14 @@
 -- * generate run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_ functions
 -- * generate type synonym for ModuleRead <MyModule> and ModuleState <MyModule>
 module Module.RS.QQ
-  ( makeRModule,  makeRModule_
+  ( makeRModule,  makeRModule_, makeRModule__
   , makeRSModule, makeRSModule_
   ) where
 
 import Control.DeepSeq (NFData)
 import Control.Monad
 import Control.Monad.Effect
+import Data.Default
 import Data.Either
 import Data.TypeList
 import GHC.Generics (Generic)
@@ -76,6 +77,17 @@ data RSModuleSpec = RSModuleSpec
   }
   deriving Show
 
+data GenerationConfig = GenerationConfig
+  { deriveConfigs          :: [DeriveConfig]
+  , generateSystemInstance :: Bool -- ^ Only for RModule
+  }
+
+instance Default GenerationConfig where
+  def = GenerationConfig
+    { deriveConfigs          = [ConfigDeriveGeneric, ConfigDeriveNFData]
+    , generateSystemInstance = True
+    }
+
 -- | Generates all the boilerplate declarations for a reader-like module.
 --
 -- Includes:
@@ -92,7 +104,7 @@ data RSModuleSpec = RSModuleSpec
 --
 -- * A type synonym `type MyModuleRead = ModuleRead MyModule`
 --
-makeRModuleConf :: [DeriveConfig] -> QuasiQuoter
+makeRModuleConf :: GenerationConfig -> QuasiQuoter
 makeRModuleConf conf = QuasiQuoter
   { quoteExp  = error "makeRModule: should be used as top-level declaration only, not as an expression"
   , quotePat  = error "makeRModule: should be used as top-level declaration only, not as a pattern"
@@ -100,7 +112,7 @@ makeRModuleConf conf = QuasiQuoter
   , quoteDec  = parseRModule conf
   }
 
-makeRSModuleConf :: [DeriveConfig] -> QuasiQuoter
+makeRSModuleConf :: GenerationConfig -> QuasiQuoter
 makeRSModuleConf conf = QuasiQuoter
   { quoteExp  = error "makeRSModule: should be used as top-level declaration only, not as an expression"
   , quotePat  = error "makeRSModule: should be used as top-level declaration only, not as a pattern"
@@ -108,23 +120,24 @@ makeRSModuleConf conf = QuasiQuoter
   , quoteDec  = parseRSModule conf
   }
 
-makeRModule, makeRModule_, makeRSModule, makeRSModule_ :: QuasiQuoter
-makeRModule   = makeRModuleConf [ConfigDeriveGeneric, ConfigDeriveNFData]
-makeRModule_  = makeRModuleConf []
-makeRSModule  = makeRSModuleConf [ConfigDeriveGeneric, ConfigDeriveNFData]
-makeRSModule_ = makeRSModuleConf []
+makeRModule, makeRModule_, makeRModule__, makeRSModule, makeRSModule_ :: QuasiQuoter
+makeRModule   = makeRModuleConf $ GenerationConfig [ConfigDeriveGeneric, ConfigDeriveNFData] True
+makeRModule_  = makeRModuleConf $ GenerationConfig [] True
+makeRModule__  = makeRModuleConf $ GenerationConfig [] False
+makeRSModule  = makeRSModuleConf $ GenerationConfig [ConfigDeriveGeneric, ConfigDeriveNFData] False
+makeRSModule_ = makeRSModuleConf $ GenerationConfig [] False
 
 data DeriveConfig = ConfigDeriveGeneric | ConfigDeriveNFData
   deriving (Show, Eq)
 
-parseRModule :: [DeriveConfig] -> String -> Q [Dec]
+parseRModule :: GenerationConfig -> String -> Q [Dec]
 parseRModule conf input = do
   let spec = runIdentity $ runParserT (many parseDataConsSpec) () "parseRModule" input
   case spec of
     Left err -> fail $ "Failed to parse RModule: " ++ show err
     Right rModuleSpecs -> concat <$> mapM (generateRModule conf) rModuleSpecs
 
-parseRSModule :: [DeriveConfig] -> String -> Q [Dec]
+parseRSModule :: GenerationConfig -> String -> Q [Dec]
 parseRSModule conf input = do
   let spec = runIdentity $ runParserT parseRSModuleSpec () "parseRSModule" input
   case spec of
@@ -236,8 +249,8 @@ dataInstance DataInstanceSpec{..} =
 -- * generate data instances for Module <MyModule>
 -- * generate run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_ functions
 -- * generate type synonym for ModuleRead <MyModule> and ModuleState <MyModule>
-generateRSModule :: [DeriveConfig] -> RSModuleSpec -> Q [Dec]
-generateRSModule dconf RSModuleSpec{typeName, readSpec, stateSpec} = do
+generateRSModule :: GenerationConfig -> RSModuleSpec -> Q [Dec]
+generateRSModule GenerationConfig { deriveConfigs = dconf } RSModuleSpec{typeName, readSpec, stateSpec} = do
   let deriveGeneric = [deriveG  | ConfigDeriveGeneric `elem` dconf]
       -- deriveNFData  = [deriveNF | ConfigDeriveNFData  `elem` dconf]
 
@@ -447,8 +460,8 @@ runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod m
          , runMyModuleIn_Sig , runMyModuleIn_Fun , inlinePragma runMyModuleIn_Name
          ]
 
-generateRModule :: [DeriveConfig] -> DataConsSpec -> Q [Dec]
-generateRModule dconf DataConsSpec{dataConsName = modName, dataFields} = do
+generateRModule :: GenerationConfig -> DataConsSpec -> Q [Dec]
+generateRModule GenerationConfig{ deriveConfigs = dconf, generateSystemInstance } DataConsSpec{dataConsName = modName, dataFields} = do
   let deriveGeneric = [deriveG  | ConfigDeriveGeneric `elem` dconf]
       deriveNFData  = [deriveNF | ConfigDeriveNFData  `elem` dconf]
   ---------------------------------------------------------------------------
@@ -586,13 +599,15 @@ generateRModule dconf DataConsSpec{dataConsName = modName, dataFields} = do
 
   let typeSyn = TySynD readConName [] readTy
 
-  pure [ tagDec
-       , instanceModule
-       , instanceSystemModule
-       , runSig , runFun , runPrag
-       , runInSig , runInFun, runInPrag
-       , typeSyn
-       ]
+  pure $  [ tagDec
+          , instanceModule
+          ] <>
+          [ instanceSystemModule | generateSystemInstance ]
+          <>
+          [ runSig , runFun , runPrag
+          , runInSig , runInFun, runInPrag
+          , typeSyn
+          ]
 
 -------------------------------------------------------------------------------
 -- Helpers (TH arrow type)
