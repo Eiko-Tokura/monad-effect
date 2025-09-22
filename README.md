@@ -429,8 +429,7 @@ runRModuleIn r = runEffTIn_ r MyModuleState
 {-# INLINE runMyModuleIn #-}
 
 -- It also generates obvious instances for `ModuleEvent` and `ModuleInitData`.
--- If this is to be avoided, currently you have to write your own module declaration.
--- We wish to customize the behavior in the future.
+-- If this is to be avoided (for example you want to write your own instances), use `makeRModule__` instead.
 ```
 
 If you don't want the `derive (Generic, NFData)`, use `makeRModule_` instead.

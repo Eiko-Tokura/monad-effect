@@ -121,10 +121,15 @@ makeRSModuleConf conf = QuasiQuoter
   }
 
 makeRModule, makeRModule_, makeRModule__, makeRSModule, makeRSModule_ :: QuasiQuoter
+-- | Make RModule with Generic and NFData derivations, and SystemModule instance
 makeRModule   = makeRModuleConf $ GenerationConfig [ConfigDeriveGeneric, ConfigDeriveNFData] True
+-- | Make RModule without any derivations, but with SystemModule instance
 makeRModule_  = makeRModuleConf $ GenerationConfig [] True
+-- | Make RModule without any derivations and without SystemModule instance
 makeRModule__  = makeRModuleConf $ GenerationConfig [] False
+-- | Make RSModule with Generic and NFData derivations
 makeRSModule  = makeRSModuleConf $ GenerationConfig [ConfigDeriveGeneric, ConfigDeriveNFData] False
+-- | Make RSModule without any derivations
 makeRSModule_ = makeRSModuleConf $ GenerationConfig [] False
 
 data DeriveConfig = ConfigDeriveGeneric | ConfigDeriveNFData
