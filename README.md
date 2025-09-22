@@ -37,7 +37,7 @@ But there are some problems with `Maybe` and `Either`:
 
 * `Maybe` gives you no information about the error, it is composable but not informative. The same problem with `MaybeT`.
 
-* `Either e` gives you information of type `e`, but if you have multiple different `Either e_i` types in your program, there is no obvious way to compose them except by using `Either Text`, `Either SomeException` or `Either (Either e1 (Either e2 e3))`. The former is tempting to use but it gives us no obvious way to catch specific errors (you don't want to parse the Text message to find out what went wrong), and the latter is not ergonomic at all.
+* `Either e` gives you information of type `e`, but if you have multiple different `Either e_i` types in your program, there is no obvious way to compose them except by using `Either Text`, `Either SomeException` or `Either e0 (Either e1 (Either e2 e3))`. The former is tempting to use but it gives us no obvious way to catch specific errors (you don't want to parse the Text message to find out what went wrong), and the latter is not ergonomic at all.
 
 * `ExceptT` has the same problem as `Either` and it also has a *small pitfall*, the order of composing monad transformers matters. Think about what `StateT s (ExceptT e m) a` and `ExceptT e (StateT s m) a` mean.
 
