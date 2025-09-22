@@ -64,7 +64,8 @@ import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.RST
+import Control.Monad.RS.Class
+import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.Bifunctor
 import Data.Functor.Identity
@@ -74,8 +75,8 @@ import Data.String (IsString)
 import Data.Text (Text, unpack, pack)
 import Data.Type.Equality
 import Data.TypeList
-import Data.TypeList.FData
 import Data.TypeList.ConsFData.Pattern
+import Data.TypeList.FData
 import GHC.TypeError
 import GHC.TypeLits
 
@@ -111,12 +112,12 @@ checkNoError = id
 
 -- | a newtype wrapper ErrorText that wraps a Text with a name (symbol type)
 -- useful for creating ad-hoc error type
-newtype ErrorText (s :: Symbol) = ErrorText Text
+newtype ErrorText (s :: k) = ErrorText Text
   deriving newtype (IsString)
 
 -- | a newtype wrapper ErrorValue that wraps a custom value type v with a name (symbol type)
 -- useful for creating ad-hoc error type
-newtype ErrorValue (a :: Symbol) (v :: Type) = ErrorValue v
+newtype ErrorValue (a :: k) (v :: Type) = ErrorValue v
 
 -- | A wrapper dedicated for errors living in MonadThrow and MonadCatch
 newtype MonadThrowError = MonadThrowError SomeException

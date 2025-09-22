@@ -86,7 +86,7 @@ library
                     , Module.RS
                     , Module.RS.QQ
                     , Module.Resource
-                    , Control.Monad.RST
+                    , Control.Monad.RS.Class
 
                     -- , Control.Monad.Effect.Concurrent
     -- Modules included in this library but not exported.

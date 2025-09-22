@@ -1,0 +1,39 @@
+-- This module provides two interface MonadReadable and MonadStateful, unlike MonadReader
+-- and MonadState, these interfaces do not have functional dependencies, allowing for
+-- simple and extensible state and read effects.
+module Control.Monad.RS.Class where
+
+-- | A class for monads that can read a value of type 'r'.
+-- without the functional dependencies, so you can read different types of values
+class Monad m => MonadReadable r m where
+  {-# MINIMAL query, local #-}
+  -- | Query the monad for a value of type 'r'.
+  query :: m r
+
+  -- | Transform the result of a query using a function.
+  queries :: (r -> r') -> m r'
+  queries f = f <$> query
+  {-# INLINE queries #-}
+
+  local :: (r -> r) -> m a -> m a
+
+-- | A class for monads that can maintain a state of type 's'.
+-- without the functional dependencies, so you can have different types of states
+class Monad m => MonadStateful s m where
+  {-# MINIMAL get, put #-}
+  -- | Get the current state.
+  get :: m s
+
+  gets :: (s -> a) -> m a
+  gets f = f <$> get
+  {-# INLINE gets #-}
+
+  -- | Set the state to a new value.
+  put :: s -> m ()
+
+  -- | Modify the current state using a function.
+  modify :: (s -> s) -> m ()
+  modify f = do
+    s <- get
+    put (f s)
+  {-# INLINE modify #-}
