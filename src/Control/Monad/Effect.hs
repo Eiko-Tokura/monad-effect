@@ -6,7 +6,7 @@
 module Control.Monad.Effect
   ( -- * EffTectful computation
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
-  , ErrorText(..), ErrorValue(..), MonadThrowError(..)
+  , ErrorText(..), errorText, ErrorValue(..), errorValue, MonadThrowError(..)
   , embedEffT, embedMods, embedError
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
   , runEffTNoError
@@ -110,14 +110,32 @@ checkNoError :: MonadNoError m => m a -> m a
 checkNoError = id
 {-# INLINE checkNoError #-}
 
--- | a newtype wrapper ErrorText that wraps a Text with a name (symbol type)
+-- | a newtype wrapper ErrorText that wraps a Text with a name (for example Symbol type)
 -- useful for creating ad-hoc error type
+--
+-- @
+-- ErrorText @_ @"FileNotFound" "information : file not found"
+-- @
 newtype ErrorText (s :: k) = ErrorText Text
   deriving newtype (IsString)
 
--- | a newtype wrapper ErrorValue that wraps a custom value type v with a name (symbol type)
+-- | Can be used to construct an ErrorText value, use type application to give the name
+--
+-- @
+-- errorText @"FileNotFound" "file not found"
+-- @
+errorText :: forall s. Text -> ErrorText s
+errorText = ErrorText
+{-# INLINE errorText #-}
+
+-- | a newtype wrapper ErrorValue that wraps a custom value type v with a name (for example Symbol type)
 -- useful for creating ad-hoc error type
 newtype ErrorValue (a :: k) (v :: Type) = ErrorValue v
+
+-- | Can be used to construct an ErrorValue value, use type application to give the name
+errorValue :: forall s v. v -> ErrorValue s v
+errorValue = ErrorValue
+{-# INLINE errorValue #-}
 
 -- | A wrapper dedicated for errors living in MonadThrow and MonadCatch
 newtype MonadThrowError = MonadThrowError SomeException

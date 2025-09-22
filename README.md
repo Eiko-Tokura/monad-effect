@@ -85,7 +85,7 @@ import qualified Data.Text as T
 -- | Wraps your effectul routine into EffT monad transformer
 myLookup :: (Show k, Ord k, Monad m) => k -> EffT '[SModule (M.Map k v)] '[ErrorText "Map.keyNotFound"] m v
 myLookup k
-  = effMaybeInWith (ErrorText @"Map.keyNotFound" $ " where key = " <> T.pack (show k)) -- wraps Maybe into an exception
+  = effMaybeInWith (errorText @"Map.keyNotFound" $ " where key = " <> T.pack (show k)) -- wraps Maybe into an exception
   $ getsS (M.lookup k) -- this just returns a monadic value of type `Maybe v`
 
 -- | This effect can run as a pure function! Put m = Identity for example.
@@ -97,7 +97,7 @@ lookups = do
   return (foo, bar, baz)
 ```
 
-Here `ErrorText (s :: Symbol)` is a newtype wrapper for `Text` is for you to create ad-hoc exception types very easily. We also provided `ErrorValue (s :: Symbol) (v :: Type)` that is a newtype wrapping `v` if you want a more concrete type.
+Here `ErrorText (s :: k)` is a newtype wrapper for `Text` is for you to create ad-hoc exception types very easily. We also provided `ErrorValue (s :: k) (v :: Type)` that is a newtype wrapping `v` if you want a more concrete type.
 
 ### **Performant**
 
