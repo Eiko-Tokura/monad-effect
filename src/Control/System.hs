@@ -40,6 +40,9 @@ type family DependencyW (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Const
 type family Dependency (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
   Dependency mod deps mods = (ConsFDataList FData (mod : mods), DependencyW mod deps mods)
 
+type family Dependency' c (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
+  Dependency' c mod deps mods = (ConsFDataList c (mod : mods), DependencyW mod deps mods)
+
 type SystemInitDataHardCode' c mods = c ModuleInitDataHardCode mods
 type SystemInitDataHardCode    mods = SystemInitDataHardCode' FData mods
 type SystemInitDataHardCodeL   mods = SystemInitDataHardCode' FList mods
