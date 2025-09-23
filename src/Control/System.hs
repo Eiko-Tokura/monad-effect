@@ -21,7 +21,7 @@ module Control.System
   , SystemInitDataHardCode'
   , SystemInitDataHardCode
   , SystemInitDataHardCodeL
-  , Dependency
+  , Dependency, Dependency'
 
   ) where
 
