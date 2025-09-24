@@ -46,7 +46,7 @@ class InList e es => In' flist e es where
 
   modifyIn :: (f e -> f e) -> flist f es -> flist f es
   default modifyIn :: (ConsFData flist) => (f e -> f e) -> flist f es -> flist f es
-  modifyIn f = modifyInS (singFirstIndex @e @es) f
+  modifyIn = modifyInS (singFirstIndex @e @es)
   {-# INLINE modifyIn #-}
 
 -- | Axiom
@@ -81,7 +81,7 @@ instance In' FList e (e : ts) where
   {-# INLINE getIn #-}
   modifyIn f = \(x :** xs) -> f x :** xs
   {-# INLINE modifyIn #-}
-  
+
 -- | InListductive case for the In class. UniqueIn e (t : ts), 
 instance {-# OVERLAPPABLE #-} (NotEq e t, InList e ts) => InList e (t : ts) where
   singIndex = case firstIndexTraverseNotEqElem @e @t @ts of

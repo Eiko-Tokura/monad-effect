@@ -113,6 +113,11 @@ type family Remove (e :: Nat) (ts :: [Type]) :: [Type] where
   Remove Zero     (t ': ts) = ts
   Remove (Succ n) (t ': ts) = t : Remove n ts
 
+type family Replace (e :: Nat) (t :: Type) (ts :: [Type]) :: [Type] where
+  Replace e t '[]              = '[]
+  Replace Zero     t (u ': ts) = t ': ts
+  Replace (Succ n) t (u ': ts) = u ': Replace n t ts
+
 type family AtIndex (ts :: [Type]) (n :: Nat) :: Type where
   AtIndex (t ': ts) 'Zero = t
   AtIndex (t ': ts) ('Succ n) = AtIndex ts n

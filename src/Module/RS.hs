@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 -- | This module defines two modules (unit of effect) that provides reader and state functionality.
 --
 -- it can be used in the EffT monad transformer
@@ -91,6 +92,26 @@ asStateT action = do
   putModule (SState s')
   return a
 {-# INLINE asStateT #-}
+
+-- | Restrict a state module to be read-only RModule
+readOnly :: forall s mods errs m a c. (In' c (SModule s) (SModule s : mods), ConsFDataList c (SModule s : mods), ConsFDataList c (RModule s : mods), Monad m)
+  => EffT' c (RModule s : mods) errs m a
+  -> EffT' c (SModule s : mods) errs m a
+readOnly eff = do
+  state <- getS @s
+  embedEffT $ runEffTOuter_ (RRead state) RState eff
+{-# INLINE readOnly #-}
+
+-- readOnlyIn :: forall s errs m a c mods' mods.
+--   ( In' c (SModule s) mods
+--   , mods' ~ Replace (FirstIndex (SModule s) mods) (RModule s) mods
+--   , ReplaceElem c mods
+--   , Monad m
+--   )
+--   => EffT' c mods' errs m a
+--   -> EffT' c mods  errs m a
+-- readOnlyIn effRO = EffT' $ \modsRead modsState ->
+--   _
 
 runRModule :: (ConsFDataList c (RModule r : mods), Monad m) => r -> EffT' c (RModule r : mods) errs m a -> EffT' c mods errs m a
 runRModule r = runEffTOuter_ (RRead r) RState

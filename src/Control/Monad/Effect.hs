@@ -12,6 +12,7 @@ module Control.Monad.Effect
   , runEffTNoError
   , runEffTOuter, runEffTOuter', runEffTOuter_
   , runEffTIn, runEffTIn', runEffTIn_
+  , replaceEffTIn
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
@@ -376,6 +377,28 @@ runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod m
   -> EffT' c (Remove (FirstIndex mod mods) mods) es m a
 runEffTIn_ mread mstate eff = fst <$> runEffTIn @mod @mods mread mstate eff
 {-# INLINE runEffTIn_ #-}
+
+-- | Replace a module inside EffT' with another module.
+replaceEffTIn :: forall mod mod' mods mods' es m c a.
+  ( ReplaceElem c mods
+  , mods' ~ Replace (FirstIndex mod mods) mod' mods
+  , Monad m
+  , In' c mod mods
+  )
+  => (ModuleRead mod -> ModuleState mod -> (ModuleRead mod', ModuleState mod'))
+  -> (ModuleRead mod -> ModuleState mod -> ModuleState mod' -> ModuleState mod)
+  -> EffT' c mods' es m a
+  -> EffT' c mods  es m a
+replaceEffTIn replaceFunction recoverFunction eff = EffT' $ \modsRead modsState -> do
+  let (mod'Read, mod'State) = replaceFunction (getIn @c @mod modsRead) (getIn @c @mod modsState)
+      rs = replaceElem (singFirstIndex @mod @mods) mod'Read modsRead
+      ss = replaceElem (singFirstIndex @mod @mods) mod'State modsState
+  (ea, ss') <- unEffT' eff rs ss
+  case ea of
+    RSuccess a  -> returnStrict (RSuccess a , unReplaceElem (singFirstIndex @mod @mods) (Proxy @mod') (recoverFunction (getIn @c @mod modsRead) (getIn @c @mod modsState)) ss')
+    RFailure es -> returnStrict (RFailure es, unReplaceElem (singFirstIndex @mod @mods) (Proxy @mod') (recoverFunction (getIn @c @mod modsRead) (getIn @c @mod modsState)) ss')
+{-# INLINE replaceEffTIn #-}
+
 -------------------------------------- instances --------------------------------------
 
 -- | The unit of Effect, a module is a type with certain associated data family types

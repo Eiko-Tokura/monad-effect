@@ -5,6 +5,7 @@ module Data.TypeList.ConsFData where
 import Data.TypeList.Families
 import Data.Type.Equality
 import Data.Kind (Type)
+import Data.Proxy
 
 class ConsFNil (flist :: (Type -> Type) -> [Type] -> Type) where
   fNil  :: flist f '[]
@@ -22,6 +23,11 @@ class When (NonEmpty (Tail ts)) (RemoveElem flist (Tail ts)) => RemoveElem flist
   removeElem :: SFirstIndex t ts -> flist f ts -> flist f (Remove (FirstIndex t ts) ts)
 
   unRemoveElem :: SFirstIndex t ts -> f t -> flist f (Remove (FirstIndex t ts) ts) -> flist f ts
+
+class When (NonEmpty (Tail ts)) (ReplaceElem flist (Tail ts)) => ReplaceElem flist (ts :: [Type]) where
+  replaceElem :: SFirstIndex t ts -> f t' -> flist f ts -> flist f (Replace (FirstIndex t ts) t' ts)
+
+  unReplaceElem :: SFirstIndex t ts -> Proxy t' -> (f t' -> f t) -> flist f (Replace (FirstIndex t ts) t' ts) -> flist f ts
 
 class ConsFNil flist => ConsFData flist where
   unConsF :: flist f (t : ts) -> (f t, flist f ts)
