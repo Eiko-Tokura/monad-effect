@@ -35,13 +35,17 @@ type family DependencyW (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Const
   DependencyW mod '[] mods = mod `In` (mod : mods)
   DependencyW mod (dep ': deps) mods = (dep `In` mods, dep `In` (mod : mods), DependencyW mod deps mods)
 
+type family DependencyW' c (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
+  DependencyW' c mod '[] mods = (In' c mod (mod : mods))
+  DependencyW' c mod (dep ': deps) mods = (In' c dep mods, In' c dep (mod : mods), DependencyW' c mod deps mods)
+
 -- | A type family that can be used to generate the constraints
 -- to make specifying module dependencies easier
 type family Dependency (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
   Dependency mod deps mods = (ConsFDataList FData (mod : mods), DependencyW mod deps mods)
 
 type family Dependency' c (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
-  Dependency' c mod deps mods = (ConsFDataList c (mod : mods), DependencyW mod deps mods)
+  Dependency' c mod deps mods = (ConsFDataList c (mod : mods), DependencyW' c mod deps mods)
 
 type SystemInitDataHardCode' c mods = c ModuleInitDataHardCode mods
 type SystemInitDataHardCode    mods = SystemInitDataHardCode' FData mods
