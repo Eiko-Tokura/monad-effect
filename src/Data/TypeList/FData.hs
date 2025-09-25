@@ -10,14 +10,14 @@ module Data.TypeList.FData
   , module Data.TypeList
   ) where
 
-import GHC.Generics (Generic)
 import Control.DeepSeq (NFData(..))
+import Data.Default
+import Data.Kind (Type)
+import Data.Proxy
+import Data.Type.Equality
 import Data.TypeList
 import Data.TypeList.FData.TH
-import Data.Kind (Type)
-import Data.Type.Equality
-import Data.Proxy
-import Data.Default
+import GHC.Generics (Generic)
 
 data family FData (f :: k -> Type) (ts :: [k]) :: Type
 data instance FData f '[] = FData0
@@ -29,12 +29,18 @@ type instance FDataConstraint FData e ts = (FDataByIndex (FirstIndex e ts) ts)
 instance (FDataConstraint FData e es, InList e es) => In' FData e es where
   getIn      = case proofIndex @e @es of Refl -> getFDataByIndex    (Proxy @(FirstIndex e es))
   modifyIn f = case proofIndex @e @es of Refl -> modifyFDataByIndex (Proxy @(FirstIndex e es)) f
+  lensIn   f = case proofIndex @e @es of Refl -> lensFDataByIndex   (Proxy @(FirstIndex e es)) f
   {-# INLINE getIn #-}
   {-# INLINE modifyIn #-}
+  {-# INLINE lensIn #-}
 
 class FDataByIndex (n :: Nat) (ts :: [Type]) where
   getFDataByIndex    :: Proxy n -> FData f ts -> f (AtIndex ts n)
   modifyFDataByIndex :: Proxy n -> (f (AtIndex ts n) -> f (AtIndex ts n)) -> FData f ts -> FData f ts
+  lensFDataByIndex   :: Proxy n
+                     -> forall fun. (Functor fun)
+                     => ( f (AtIndex ts n) -> fun (f (AtIndex ts n)) )
+                     -> FData f ts -> fun (FData f ts)
 
 instance
   ( WhenNonEmpty ts (ConsFDataList FData (Tail ts))
@@ -100,36 +106,48 @@ $(generateFDataByIndexInstances [(j, i) | i <- [1..20], j <- [0..i-1]])
 --   modifyFDataByIndex _ f (FData1 x) = FData1 (f x)
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData1 x) = fmap FData1 (g x)
+--   {-# INLINE lensFDataByIndex #-}
 --
 -- instance FDataByIndex Zero '[x1, x2] where
 --   getFDataByIndex    _   (FData2 x1 _ ) = x1
 --   modifyFDataByIndex _ f (FData2 x1 x2) = FData2 (f x1) x2
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData2 x1 x2) = fmap (\x1' -> FData2 x1' x2) (g x1)
+--   {-# INLINE lensFDataByIndex #-}
 -- 
 -- instance FDataByIndex (Succ Zero) '[x1, x2] where
 --   getFDataByIndex    _ (FData2 _ x2) = x2
 --   modifyFDataByIndex _ f (FData2 x1 x2) = FData2 x1 (f x2)
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData2 x1 x2) = fmap (\x2' -> FData2 x1 x2') (g x2)
+--   {-# INLINE lensFDataByIndex #-}
 -- 
 -- instance FDataByIndex Zero '[x1, x2, x3] where
 --   getFDataByIndex    _   (FData3 x1 _ _) = x1
 --   modifyFDataByIndex _ f (FData3 x1 x2 x3) = FData3 (f x1) x2 x3
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData3 x1 x2 x3) = fmap (\x1' -> FData3 x1' x2 x3) (g x1)
+--   {-# INLINE lensFDataByIndex #-}
 -- 
 -- instance FDataByIndex Zero '[x1, x2, x3, x4] where
 --   getFDataByIndex    _   (FData4 x1 _ _ _) = x1
 --   modifyFDataByIndex _ f (FData4 x1 x2 x3 x4) = FData4 (f x1) x2 x3 x4
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData4 x1 x2 x3 x4) = fmap (\x1' -> FData4 x1' x2 x3 x4) (g x1)
+--   {-# INLINE lensFDataByIndex #-}
 -- 
 -- instance FDataByIndex Zero '[x1, x2, x3, x4, x5] where
 --   getFDataByIndex    _   (FData5 x1 _ _ _ _) = x1
 --   modifyFDataByIndex _ f (FData5 x1 x2 x3 x4 x5) = FData5 (f x1) x2 x3 x4 x5
 --   {-# INLINE getFDataByIndex #-}
 --   {-# INLINE modifyFDataByIndex #-}
+--   lensFDataByIndex _ g (FData5 x1 x2 x3 x4 x5) = fmap (\x1' -> FData5 x1' x2 x3 x4 x5) (g x1)
+--   {-# INLINE lensFDataByIndex #-}
 --
 -- instance UnConsFData FData '[x1] where
 --   unConsFData (FData1 x1) = (x1, FData0)

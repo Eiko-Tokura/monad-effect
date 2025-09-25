@@ -102,15 +102,18 @@ generateFDataByIndexInstance idx len = do
   let conName   = mkName ("FData" ++ show len)          -- FData1 .. FData5 …
       className = mkName "FDataByIndex"                 --''FDataByIndex
       fName     = mkName "f"                            -- the function arg
+      gName     = mkName "g"                            -- functorial updater
       -- x1 .. xn  (term vars)
       xNames    = [ mkName ("x" ++ show i) | i <- [1 .. len] ]
       xiName    = xNames !! idx                         -- xi (to be focused)
+      xiPrime   = mkName (nameBase xiName ++ "'")       -- updated slot
       -- x1 .. xn  (type vars)
       tNames    = [ mkName ("x" ++ show i) | i <- [1 .. len] ]
       tVars     = map VarT tNames
 
       fGetFDataByIndex = mkName "getFDataByIndex"    -- getFDataByIndex
       fModifyFDataByIndex  = mkName "modifyFDataByIndex" -- modifyFDataByIndex
+      fLensFDataByIndex    = mkName "lensFDataByIndex"
 
   let instHead = AppT
                    (AppT (ConT className) (natTy idx))
@@ -144,6 +147,29 @@ generateFDataByIndexInstance idx len = do
                ]
                (NormalB modifyBody)
                []
+  ----------------------------------------------------------------------
+  -- lensFDataByIndex
+  --   lensFDataByIndex _ g (FDataN x1 .. xi .. xn)
+  --     = fmap (\xi' -> FDataN x1 .. xi' .. xn) (g xi)
+  ----------------------------------------------------------------------
+      gCall      = AppE (VarE gName) (VarE xiName)
+
+      rebuiltFields =
+        [ if i == idx then VarE xiPrime else VarE (xNames !! i)
+        | i <- [0 .. len-1] ]
+
+      rebuildWithXi' = LamE [VarP xiPrime]
+                         (foldl AppE (ConE conName) rebuiltFields)
+
+      lensBody = AppE (AppE (VarE 'fmap) rebuildWithXi') gCall
+
+      lensClause =
+        Clause [ WildP
+               , VarP gName
+               , ConP conName [] patVars
+               ]
+               (NormalB lensBody)
+               []
 
   pure $ InstanceD
           Nothing
@@ -151,9 +177,20 @@ generateFDataByIndexInstance idx len = do
           instHead
           [ FunD fGetFDataByIndex    [getClause]
           , FunD fModifyFDataByIndex [modifyClause]
+          , FunD fLensFDataByIndex   [lensClause]
           , PragmaD $ inline fGetFDataByIndex
           , PragmaD $ inline fModifyFDataByIndex
+          , PragmaD $ inline fLensFDataByIndex
           ]
+  -- pure $ InstanceD
+  --         Nothing
+  --         []
+  --         instHead
+  --         [ FunD fGetFDataByIndex    [getClause]
+  --         , FunD fModifyFDataByIndex [modifyClause]
+  --         , PragmaD $ inline fGetFDataByIndex
+  --         , PragmaD $ inline fModifyFDataByIndex
+  --         ]
 
 generateFDataByIndexInstances :: [(Int, Int)] -> Q [Dec]
 generateFDataByIndexInstances = mapM (uncurry generateFDataByIndexInstance)

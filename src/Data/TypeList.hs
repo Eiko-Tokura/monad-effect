@@ -49,6 +49,11 @@ class InList e es => In' flist e es where
   modifyIn = modifyInS (singFirstIndex @e @es)
   {-# INLINE modifyIn #-}
 
+  lensIn :: forall f fun. Functor fun => (f e -> fun (f e)) -> flist f es -> fun (flist f es)
+  default lensIn :: (ConsFData flist) => forall fun. Functor fun => (f e -> fun (f e)) -> flist f es -> fun (flist f es)
+  lensIn = lensInS (singFirstIndex @e @es)
+  {-# INLINE lensIn #-}
+
 -- | Axiom
 firstIndexTraverseNotEqElem :: forall e t ts. (NotEq e t, InList e ts) => FirstIndex e (t : ts) :~: Succ (FirstIndex e ts)
 firstIndexTraverseNotEqElem = unsafeCoerce Refl

@@ -38,11 +38,16 @@ class ConsFNil flist => ConsFData flist where
   getInS SFirstIndexZero          (unConsF -> (x, _)) = x
   getInS (SFirstIndexSucc Refl n) (unConsF -> (_, xs)) = getInS n xs
   {-# INLINE getInS #-}
- 
+
   modifyInS :: SFirstIndex t ts -> (f t -> f t) -> flist f ts -> flist f ts
   modifyInS SFirstIndexZero          f (unConsF -> (x, xs)) = f x `consF` xs
   modifyInS (SFirstIndexSucc Refl n) f (unConsF -> (x, xs)) = x `consF` modifyInS n f xs
   {-# INLINE modifyInS #-}
+
+  lensInS :: forall f fun t ts. Functor fun => SFirstIndex t ts -> (f t -> fun (f t)) -> flist f ts -> fun (flist f ts)
+  lensInS SFirstIndexZero          f (unConsF -> (x, xs)) = (`consF` xs) <$> f x
+  lensInS (SFirstIndexSucc Refl n) f (unConsF -> (x, xs)) = consF x <$> lensInS n f xs
+  {-# INLINE lensInS #-}
 
 class
   ( WhenNonEmpty ts (ConsFDataList flist (Tail ts))
