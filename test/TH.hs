@@ -6,11 +6,11 @@ import Module.RS.QQ
 [makeRModule|
 MyModule
   field1 :: !Int
-  field2 :: Bool
+  Lens field2 :: Bool
 |]
 
 [makeRSModule|
 MyRSModule
-  readField :: !Int
+  Lens readField :: !Int
   State stateField :: !Int
 |]

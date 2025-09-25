@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, OverloadedRecordDot #-}
+{-# LANGUAGE RecordWildCards, OverloadedRecordDot, ViewPatterns #-}
 -- | This module provides Template Haskell utilities for generating RModules and SModules with fixed type
 --
 -- The `makeRModule` function generates a reader module, for example
@@ -64,9 +64,17 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 import Text.Parsec
 
+data DataFieldSpec = DataFieldSpec
+  { fieldName   :: Name
+  , fieldLens   :: Bool -- ^ Whether to generate a lens for this field
+  , fieldStrict :: Bool
+  , fieldType   :: Type
+  }
+  deriving Show
+
 data DataConsSpec = DataConsSpec
   { dataConsName :: Name
-  , dataFields   :: [(Name, Bool, Type)] -- ^ (fieldName, strictness, fieldType)
+  , dataFields   :: [DataFieldSpec]
   }
   deriving Show
 
@@ -187,15 +195,22 @@ parseModuleName = do
   let moduleName = upperHead : rest
   pure $ mkName moduleName
 
-parseField :: ParsecT String () Identity (Name, Bool, Type)
+parseField :: ParsecT String () Identity DataFieldSpec
 parseField = do
+  lens <- option False (True <$ try (string "Lens" >> many1 space))
   fieldName <- parseFieldName
   spaces >> char ':' >> char ':' >> spaces
   strictness <- option False (True <$ char '!')
   typeString <- manyTill anyChar (try (eof <|> void endOfLine))
   case parseType typeString of
     Left err -> fail $ "Failed to parse type: " ++ show err
-    Right type' -> return (fieldName, strictness, type')
+    Right type' -> return $ DataFieldSpec
+      { fieldName   = fieldName
+      , fieldLens   = lens
+      , fieldStrict = strictness
+      , fieldType   = type'
+      }
+    -- (fieldName, strictness, type')
   where
     parseFieldName = mkName <$> do
       lowerHead <- lower
@@ -215,12 +230,17 @@ mkBang :: Bool -> Bang
 mkBang True  = Bang NoSourceUnpackedness SourceStrict
 mkBang False = Bang NoSourceUnpackedness NoSourceStrictness
 
-updateBang :: (a, Bool, b) -> (a, Bang, b)
-updateBang (a, b, c) = (a, mkBang b, c)
+updateBang :: DataFieldSpec -> (Name, Bang, Type)
+updateBang DataFieldSpec{..} = (fieldName, mkBang fieldStrict, fieldType)
 
-appendName :: String -> (Name, a, b) -> (Name, a, b)
-appendName suffix (name, a, b) =
-  (mkName $ nameBase name ++ suffix, a, b)
+appendName :: String -> DataFieldSpec -> DataFieldSpec
+appendName suffix DataFieldSpec{..} =
+  DataFieldSpec
+    { fieldName   = mkName $ nameBase fieldName ++ suffix
+    , fieldLens   = fieldLens
+    , fieldStrict = fieldStrict
+    , fieldType   = fieldType
+    }
 
 inlinePragma :: Name -> Dec
 inlinePragma name = PragmaD $ InlineP name Inline FunLike AllPhases
@@ -237,7 +257,7 @@ data DataInstanceSpec = DataInstanceSpec
 dataInstance :: DataInstanceSpec -> Dec
 dataInstance DataInstanceSpec{..} =
   case dataFields dataFamilyConstructor of
-    [(_, True, _)] ->
+    [fieldStrict -> True] ->
       NewtypeInstD [] Nothing
         (AppT dataFamilyType dataFamilyInputType)
         Nothing
@@ -249,7 +269,38 @@ dataInstance DataInstanceSpec{..} =
         Nothing
         [RecC (dataConsName dataFamilyConstructor) $ updateBang <$> dataFields dataFamilyConstructor]
         dataFamilyDerivations
-  where cancelBang (a, _, c) = (a, mkBang False, c)
+  where cancelBang fspec = (fieldName fspec, mkBang False, fieldType fspec)
+
+-- | If fieldName starts with '_', remove the leading underscore for the lens name.
+-- Otherwise, prepend an underscore.
+lensName :: Name -> Name
+lensName (nameBase -> ('_':rest)) = mkName rest
+lensName name                     = mkName $ '_' : nameBase name
+
+generateLens :: Type -> DataFieldSpec -> Q [Dec]
+generateLens recType DataFieldSpec{..} | fieldLens = do
+  let lensFunName = lensName fieldName
+      -- | The body of the lens function
+      -- _lensName :: Functor f => (fieldType -> f fieldType) -> (DataConsType -> f DataConsType)
+      -- _lensName f s = fmap (\x -> s { fieldName = x }) (f (fieldName s))
+      lensTypeSig = ForallT [PlainTV funName SpecifiedSpec]
+                            [ConT ''Functor `AppT` VarT funName]
+                            (ArrowT `AppT` (ArrowT `AppT` fieldType `AppT` (VarT funName `AppT` fieldType))
+                                    `AppT` (ArrowT `AppT` recType   `AppT` (VarT funName `AppT` recType))
+                            )
+      lensFunBody = LamE [VarP fName, VarP sName]
+                    $ VarE 'fmap
+                      `AppE` LamE [VarP xName] (RecUpdE (VarE sName) [(fieldName, VarE xName)])
+                      `AppE` AppE (VarE fName) (AppE (VarE fieldName) (VarE sName))
+      funName = mkName "fun"
+      fName   = mkName "f"
+      sName   = mkName "s"
+      xName   = mkName "x"
+  sig <- sigD lensFunName (pure lensTypeSig)
+  fun <- funD lensFunName [clause [] (normalB (pure lensFunBody)) []]
+  prag <- pragInlD lensFunName Inline FunLike AllPhases
+  return [sig, fun, prag]
+generateLens _ DataFieldSpec{} = return []
 
 -- * generate data instances for Module <MyModule>
 -- * generate run<MyModule>, run<MyModule>', run<MyModule>_ and run<MyModule>In, run<MyModule>In', run<MyModule>In_ functions
@@ -259,7 +310,7 @@ generateRSModule GenerationConfig { deriveConfigs = dconf } RSModuleSpec{typeNam
   let deriveGeneric = [deriveG  | ConfigDeriveGeneric `elem` dconf]
       -- deriveNFData  = [deriveNF | ConfigDeriveNFData  `elem` dconf]
 
-  let warnStateNonStrict = any (\(_, strictness, _) -> not strictness) (dataFields stateSpec)
+  let warnStateNonStrict = any (\fspec -> not fspec.fieldStrict) (dataFields stateSpec)
 
   when warnStateNonStrict $ reportWarning
     $  "The state record for the module " <> nameBase typeName
@@ -281,8 +332,10 @@ generateRSModule GenerationConfig { deriveConfigs = dconf } RSModuleSpec{typeNam
             , dataFamilyDerivations = deriveGeneric
             }
         ]
-      typeSynRead  = TySynD (dataConsName readSpec) [] (ConT ''ModuleRead `AppT` ConT typeName)
-      typeSynState = TySynD (dataConsName stateSpec) [] (ConT ''ModuleState `AppT` ConT typeName)
+      readType     = ConT ''ModuleRead  `AppT` ConT typeName
+      stateType    = ConT ''ModuleState `AppT` ConT typeName
+      typeSynRead  = TySynD (dataConsName readSpec)  [] readType
+      typeSynState = TySynD (dataConsName stateSpec) [] stateType
 
       runMyModuleName    = mkName $ "run" ++ nameBase typeName
       runMyModule'Name   = mkName $ "run" ++ nameBase typeName ++ "'"
@@ -453,7 +506,10 @@ runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod m
                  []
         ]
 
-  return [ dataTag
+  lensDecsR <- concat <$> mapM (generateLens readType)  (dataFields readSpec)
+  lensDecsS <- concat <$> mapM (generateLens stateType) (dataFields stateSpec)
+
+  pure $ [ dataTag
          , instanceModule
          , typeSynRead
          , typeSynState
@@ -463,7 +519,7 @@ runEffTIn_ :: forall mod mods es m c a. (RemoveElem c mods, Monad m, In' c mod m
          , runMyModuleInSig  , runMyModuleInFun  , inlinePragma runMyModuleInName
          , runMyModuleIn'Sig , runMyModuleIn'Fun , inlinePragma runMyModuleIn'Name
          , runMyModuleIn_Sig , runMyModuleIn_Fun , inlinePragma runMyModuleIn_Name
-         ]
+         ] <> lensDecsR <> lensDecsS
 
 generateRModule :: GenerationConfig -> DataConsSpec -> Q [Dec]
 generateRModule GenerationConfig{ deriveConfigs = dconf, generateSystemInstance } DataConsSpec{dataConsName = modName, dataFields} = do
