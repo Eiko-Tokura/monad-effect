@@ -26,12 +26,16 @@ module Control.Monad.Effect
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
   , effEitherSystemException
 
+  -- * Bracket pattern
+  , maskEffT, generalBracketEffT, bracketEffT
+
   -- * Concurrency
   , forkEffT, forkEffTSafe, asyncEffT
 
   -- * No Error
-  , declareNoError
   , checkNoError
+  , declareNoError
+  , embedNoError
   , NoError
 
   -- * Modules
@@ -63,7 +67,7 @@ import Control.Concurrent.Async
 import Control.Exception as E hiding (TypeError)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Catch
+import Control.Monad.Catch as Catch
 import Control.Monad.IO.Class
 import Control.Monad.RS.Class
 import Control.Monad.Trans
@@ -80,6 +84,7 @@ import Data.TypeList.ConsFData.Pattern
 import Data.TypeList.FData
 import GHC.TypeError
 import GHC.TypeLits
+import GHC.Stack (HasCallStack)
 
 -- | EffTectful computation, using modules as units of effect
 -- the tick is used to indicate the polymorphic type c which is the data structure used to store the modules.
@@ -236,6 +241,48 @@ instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatc
       Nothing -> effThrowIn $ MonadThrowError e
   {-# INLINE catch #-}
 
+-- | Mask asynchronous exceptions in the base monad,
+-- an `unMask` function is provided to the argument to selectively unmask parts of the computation
+maskEffT
+  :: forall c mods es m b
+  .  MonadMask m
+  => HasCallStack
+  => ((forall a es'. EffT' c mods es' m a -> EffT' c mods es' m a) -> EffT' c mods es m b)
+  -> EffT' c mods es m b
+maskEffT actionUsingUnmask = EffT' $ \rs ss -> Catch.mask $ \unmask -> do
+  let unMaskEffT :: forall a es'. EffT' c mods es' m a -> EffT' c mods es' m a
+      unMaskEffT (EffT' eff) = EffT' $ \rs' ss' -> unmask (eff rs' ss')
+  unEffT' (actionUsingUnmask unMaskEffT) rs ss
+{-# INLINE maskEffT #-}
+
+-- | The generalized bracket pattern for EffT
+-- exceptions outside the error list are not caught.
+-- To deal with them, make them into the error list first (like using effTryIOWith).
+generalBracketEffT
+  :: MonadMask m
+  => HasCallStack
+  => EffT' c mods es m a                        -- ^ acquire resource
+  -> (a -> Result es' b -> EffT' c mods es m o) -- ^ release resource, and return the result
+  -> (a -> EffT' c mods es' m b)                -- ^ action using the resource
+  -> EffT' c mods es m o
+generalBracketEffT acquire release action = maskEffT $ \unMaskEffT -> do
+  resource <- acquire
+  result <- embedNoError $ unMaskEffT (errorToResult $ action resource)
+  release resource result
+
+-- | A simpler version of `generalBracketEffT` where the release function does not depend on the result of the action and error types are the same.
+bracketEffT :: (MonadMask m, HasCallStack)
+  => EffT' c mods es m a         -- ^ acquire resource
+  -> (a -> EffT' c mods es m ()) -- ^ release resource only
+  -> (a -> EffT' c mods es m b)  -- ^ action using the resource
+  -> EffT' c mods es m b
+bracketEffT acquire release = generalBracketEffT
+  acquire
+  (\a result -> case result of
+      RSuccess b -> release a >> return b
+      RFailure e -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
+  )
+
 -- | The states on the separate thread will diverge, and will be discarded.
 -- when exception occurs, the thread quits
 forkEffT :: forall c mods es m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods es m () -> EffT' c mods NoError m ThreadId
@@ -285,6 +332,10 @@ embedMods = embedEffT
 embedError :: forall es es' c mods m a. (Monad m, SubList c mods mods, SubListEmbed es es') => EffT' c mods es m a -> EffT' c mods es' m a
 embedError = embedEffT
 {-# INLINE embedError #-}
+
+embedNoError :: forall c mods es m a. (Monad m) => EffT' c mods NoError m a -> EffT' c mods es m a
+embedNoError = embedEffT
+{-# INLINE embedNoError #-}
 
 -- | Run the EffT' computation with data needed, returns the potential error result and the new state in the base monad.
 runEffT :: forall mods es m c a. Monad m => SystemRead c mods -> SystemState c mods -> EffT' c mods es m a -> m (Result es a, SystemState c mods)
@@ -740,3 +791,6 @@ effMaybeInWith e eff = EffT' $ \rs ss -> do
 
 effEitherSystemException :: (Monad m, Exception e, InList SystemError es) => EffT' c mods es m (Either e a) -> EffT' c mods es m a
 effEitherSystemException = effEitherInWith $ SystemErrorException . toException
+
+---------------------------------------------------------
+-- bracket patterns
