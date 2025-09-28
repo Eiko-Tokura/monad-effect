@@ -50,7 +50,7 @@ module Control.Monad.Effect
   , SystemError(..)
 
   -- * Re-exports
-  , MonadIO(..)
+  , MonadIO(..), MonadMask
   , ConsFDataList, FList, FData
   , Identity(..)
   , InList, In'
