@@ -33,8 +33,8 @@ import Polysemy.Reader qualified as P
 
 programMonadEffect :: Int -> ME.EffT mods '[ErrorValue "()" ()] ME.Identity ()
 programMonadEffect = \case
-    0 -> ME.effThrow (ErrorValue @"()" ())
-    n -> ME.effCatchIn' (programMonadEffect (n - 1)) $ \(ErrorValue @"()" ()) -> ME.effThrow (ErrorValue @"()" ())
+    0 -> ME.effThrow (ErrorValue @_ @"()" ())
+    n -> ME.effCatchIn' (programMonadEffect (n - 1)) $ \(ErrorValue @_ @"()" ()) -> ME.effThrow (ErrorValue @_ @"()" ())
 {-# NOINLINE programMonadEffect #-}
 
 catchMonadEffect :: Int -> Either () ()
