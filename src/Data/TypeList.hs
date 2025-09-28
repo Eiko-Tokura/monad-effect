@@ -137,15 +137,11 @@ instance SubListEmbed '[] xs where
   subListResultEmbed (RSuccess a) = RSuccess a
   {-# INLINE subListResultEmbed #-}
 
-instance (InList y xs, SubListEmbed ys xs, EqualList (y:ys) xs ~ False) => SubListEmbed (y:ys) xs where
+instance (InList y xs, SubListEmbed ys xs) => SubListEmbed (y:ys) xs where
   subListResultEmbed (RSuccess a)          = RSuccess a
   subListResultEmbed (RFailure (EHead y))  = RFailure (embedE y)
   subListResultEmbed (RFailure (ETail ys)) = subListResultEmbed (RFailure ys)
   {-# INLINE subListResultEmbed #-}
-
-type family EqualList (xs :: [Type]) (ys :: [Type]) :: Bool where
-  EqualList xs xs = 'True
-  EqualList xs ys = 'False
 
 instance {-# INCOHERENT #-} SubList c xs xs where
   getSubListF = id
@@ -158,7 +154,7 @@ instance {-# INCOHERENT #-} SubListEmbed xs xs where
   {-# INLINE subListResultEmbed #-}
 
 -- | Induction case for the SubList class.
-instance (In' c y xs, ConsFDataList c (y:ys), SubList c ys xs, EqualList (y:ys) xs ~ False) => SubList c (y : ys) xs where
+instance (In' c y xs, ConsFDataList c (y:ys), SubList c ys xs) => SubList c (y : ys) xs where
   getSubListF xs = consF0 (getIn xs) (getSubListF xs)
   {-# INLINE getSubListF #-}
   subListModifyF f xs =
