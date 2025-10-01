@@ -247,12 +247,10 @@ maskEffT
   :: forall c mods es m b
   .  MonadMask m
   => HasCallStack
-  => ((forall a es'. EffT' c mods es' m a -> EffT' c mods es' m a) -> EffT' c mods es m b)
+  => ((forall c' mods' es' a. EffT' c' mods' es' m a -> EffT' c' mods' es' m a) -> EffT' c mods es m b)
   -> EffT' c mods es m b
-maskEffT actionUsingUnmask = EffT' $ \rs ss -> Catch.mask $ \unmask -> do
-  let unMaskEffT :: forall a es'. EffT' c mods es' m a -> EffT' c mods es' m a
-      unMaskEffT (EffT' eff) = EffT' $ \rs' ss' -> unmask (eff rs' ss')
-  unEffT' (actionUsingUnmask unMaskEffT) rs ss
+maskEffT actionUsingUnmask = EffT' $ \rs ss -> Catch.mask $ \unmask ->
+  unEffT' (actionUsingUnmask $ \(EffT' eff) -> EffT' $ \rs' ss' -> unmask (eff rs' ss')) rs ss
 {-# INLINE maskEffT #-}
 
 -- | The generalized bracket pattern for EffT
