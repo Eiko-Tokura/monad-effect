@@ -286,6 +286,7 @@ generalBracketEffT acquire release action = maskEffT $ \unMaskEffT -> do
   resource <- acquire
   result <- embedNoError $ unMaskEffT (errorToResult $ action resource)
   release resource result
+{-# INLINABLE generalBracketEffT #-}
 
 -- | A simpler version of `generalBracketEffT` where the release function does not depend on the result of the action and error types are the same.
 bracketEffT :: (MonadMask m, HasCallStack)
@@ -299,6 +300,7 @@ bracketEffT acquire release = generalBracketEffT
       RSuccess b -> release a >> return b
       RFailure e -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
   )
+{-# INLINABLE bracketEffT #-}
 
 -- | The states on the separate thread will diverge, and will be discarded.
 -- when exception occurs, the thread quits
