@@ -1,4 +1,4 @@
-{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, PatternSynonyms, LinearTypes #-}
+{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, LinearTypes #-}
 -- | Module: Control.Monad.Effect
 -- Description: The module you should import to use for effectful computation
 --
@@ -7,24 +7,33 @@ module Control.Monad.Effect
   ( -- * EffTectful computation
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
   , ErrorText(..), errorText, ErrorValue(..), errorValue, MonadThrowError(..)
+  , MonadFailError(..)
+  -- * Embedding effects
   , embedEffT, embedMods, embedError
+  -- * Running EffT
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
   , runEffTNoError
   , runEffTOuter, runEffTOuter', runEffTOuter_
   , runEffTIn, runEffTIn', runEffTIn_
   , replaceEffTIn
+  -- * Catching and throwing algebraic exceptions
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
+  -- * Catching exceptions from base IO
   , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
+  -- * Converting values to error
   , effEither, effEitherWith
   , effEitherIn, effEitherInWith
+  , effEitherSystemException
   , effMaybeWith, effMaybeInWith
   , pureMaybeInWith, pureEitherInWith
   , baseEitherIn, baseEitherInWith, baseMaybeInWith
-  , errorToEither, errorToEitherAll, eitherAllToEffect
+  -- * Converting error to values
+  , errorToEither, errorToEitherAll, eitherAllToEffect, errorInToEither
+  , errorToMaybe, errorInToMaybe
+  -- * Lifting IO
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
-  , effEitherSystemException
 
   -- * Bracket pattern
   , maskEffT, generalBracketEffT, bracketEffT
@@ -240,6 +249,16 @@ instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatc
       Just e' -> handler e'
       Nothing -> effThrowIn $ MonadThrowError e
   {-# INLINE catch #-}
+
+-- | Used for MonadFail instances only
+newtype MonadFailError = MonadFailError String
+instance Show MonadFailError where
+  show (MonadFailError s) = "MonadFailError { " ++ s ++ " }"
+
+-- | When MonadFailError is in the error list, we can use MonadFail instance
+instance (Monad m, InList MonadFailError es) => MonadFail (EffT' c mods es m) where
+  fail = effThrowIn . MonadFailError
+  {-# INLINE fail #-}
 
 -- | Mask asynchronous exceptions in the base monad,
 -- an `unMask` function is provided to the argument to selectively unmask parts of the computation
@@ -599,6 +618,26 @@ errorToEither eff = EffT' $ \rs ss -> do
     RFailure (EHead e)  -> return (RSuccess (Left e), stateMods)
     RFailure (ETail es) -> return (RFailure es, stateMods)
 {-# INLINE errorToEither #-}
+
+-- | Convert the first error in the effect to Maybe
+errorToMaybe :: Monad m => EffT' c mods (e : es) m a -> EffT' c mods es m (Maybe a)
+errorToMaybe = fmap (either (const Nothing) Just) . errorToEither
+{-# INLINE errorToMaybe #-}
+
+-- | Specify the error type to convert to Either. Use TypeApplications to specify the error type.
+errorInToEither :: forall e es mods m c a. (Monad m, InList e es) => EffT' c mods es m a -> EffT' c mods (Remove (FirstIndex e es) es) m (Either e a)
+errorInToEither eff = EffT' $ \rs ss -> do
+  (eResult, stateMods) <- unEffT' eff rs ss
+  case getElemRemoveResult (singIndex @e @es) eResult of
+    Left e -> case proofIndex @e @es of
+      Refl -> return (RSuccess (Left e), stateMods)
+    Right eResult' -> return (fmap Right eResult', stateMods)
+{-# INLINE errorInToEither #-}
+
+-- | Specify the error type to convert to Maybe. Use TypeApplications to specify the error type.
+errorInToMaybe :: forall e es mods m c a. (Monad m, InList e es) => EffT' c mods es m a -> EffT' c mods (Remove (FirstIndex e es) es) m (Maybe a)
+errorInToMaybe = fmap (either (const Nothing) Just) . errorInToEither @e
+{-# INLINE errorInToMaybe #-}
 
 -- | Convert all errors to Either
 errorToEitherAll :: Monad m => EffT' c mods es m a -> EffT' c mods NoError m (Either (EList es) a)
