@@ -5,8 +5,8 @@ module Control.Monad.RS.Class where
 
 -- | A class for monads that can read a value of type 'r'.
 -- without the functional dependencies, so you can read different types of values
-class Monad m => MonadReadable r m where
-  {-# MINIMAL query, local #-}
+-- This ReadOnly has no 'local' method
+class Monad m => MonadReadOnly r m where
   -- | Query the monad for a value of type 'r'.
   query :: m r
 
@@ -15,6 +15,9 @@ class Monad m => MonadReadable r m where
   queries f = f <$> query
   {-# INLINE queries #-}
 
+-- | A class for monads that can read a value of type 'r'.
+-- without the functional dependencies, so you can read different types of values
+class MonadReadOnly r m => MonadReadable r m where
   local :: (r -> r) -> m a -> m a
 
 -- | A class for monads that can maintain a state of type 's'.

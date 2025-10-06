@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 -- | This module defines two modules (unit of effect) that provides reader and state functionality.
 --
 -- it can be used in the EffT monad transformer
@@ -6,6 +7,7 @@ module Module.RS where
 
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
+import Control.Monad.RS.Class
 
 import Control.Monad.Effect
 import Data.Kind
@@ -177,3 +179,24 @@ modifyS f = do
   s <- getS
   putS (f s)
 {-# INLINE modifyS #-}
+
+-- put here to avoid cyclic dependency
+instance {-# OVERLAPPABLE #-} (Monad m, In' c (RModule r) mods) => MonadReadOnly r (EffT' c mods errs m) where
+  query = askR
+  queries = asksR
+  {-# INLINE query #-}
+  {-# INLINE queries #-}
+
+instance {-# OVERLAPPABLE #-} (Monad m, In' c (RModule r) mods) => MonadReadable r (EffT' c mods errs m) where
+  local = localR
+  {-# INLINE local #-}
+
+instance {-# OVERLAPPABLE #-} (Monad m, In' c (SModule s) mods) => MonadStateful s (EffT' c mods errs m) where
+  get = getS
+  put = putS
+  modify = modifyS
+  gets = getsS
+  {-# INLINE get #-}
+  {-# INLINE put #-}
+  {-# INLINE modify #-}
+  {-# INLINE gets #-}

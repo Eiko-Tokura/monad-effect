@@ -205,9 +205,11 @@ instance MonadIO m => MonadIO (EffT' c mods es m) where
     return (RSuccess a, ss)
   {-# INLINE liftIO #-}
 
-instance Monad m => MonadReadable (SystemRead c mods) (EffT' c mods es m) where
+instance Monad m => MonadReadOnly (SystemRead c mods) (EffT' c mods es m) where
   query = EffT' $ \rs ss -> return (RSuccess rs, ss)
   {-# INLINE query #-}
+
+instance Monad m => MonadReadable (SystemRead c mods) (EffT' c mods es m) where
   local f (EffT' eff) = EffT' $ \rs ss -> eff (f rs) ss
   {-# INLINE local #-}
 
