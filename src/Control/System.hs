@@ -6,7 +6,7 @@ module Control.System
 
   , System(..), Loadable(..)
 
-  , runSystemWithInitData
+  -- , runSystemWithInitData
 
   , askModule, asksModule
   , queryModule, queriesModule
@@ -55,55 +55,55 @@ type SystemInitDataHardCodeL   mods = SystemInitDataHardCode' FList mods
 --
 -- If error happens at initialization, it will return Left SystemError
 -- If error happens during normal flow, it will return Right (RFailure SystemError)
-runSystemWithInitData :: forall mods es m c a. (ConsFDataList c mods, System c mods, MonadIO m)
-  => SystemInitData c mods
-  -> EffT' c mods es m a
-  -> m
-      (Either SystemError -- ^ if error happens at initialization
-        ( Result es a     -- ^ if error happens during event loop
-        , SystemState c mods)
-      )
-runSystemWithInitData initData eff = do
-  liftIO (runEffT0 (initAllModules @c @mods initData)) >>= \case
-    RSuccess (rs, ss)  -> Right <$> runEffT rs ss eff
-    RFailure (EHead e) -> return $ Left e
+-- runSystemWithInitData :: forall mods es m c a. (ConsFDataList c mods, System c mods es, MonadIO m)
+--   => SystemInitData c mods
+--   -> EffT' c mods es m a
+--   -> m
+--       (Either SystemError -- ^ if error happens at initialization
+--         ( Result es a     -- ^ if error happens during event loop
+--         , SystemState c mods)
+--       )
+-- runSystemWithInitData initData eff = do
+--   liftIO (runEffT0 (initAllModules @c @mods initData)) >>= \case
+--     RSuccess (rs, ss)  -> Right <$> runEffT rs ss eff
+--     RFailure (EHead e) -> return $ Left e
 
 -- | Specifies that the module can load after mods are loaded
 -- in practice we could use
 -- instance SomeModuleWeNeed `In` mods => Loadable mods SomeModuleToLoad
-class Loadable c mod mods where
-  {-# MINIMAL initModule #-}
-  initModule  :: ModuleInitData mod -> EffT' c mods '[SystemError] IO (ModuleRead mod, ModuleState mod)
+class Loadable c mod mods es where
+  {-# MINIMAL withModule #-}
+  withModule :: ModuleInitData mod -> EffT' c (mod : mods) es IO a -> EffT' c mods es IO a
 
-  beforeEvent :: EffT' c (mod : mods) NoError IO ()
+  beforeEvent :: EffT' c (mod : mods) es IO ()
   beforeEvent = return ()
   {-# INLINE beforeEvent #-}
 
-  afterEvent  :: EffT' c (mod : mods) NoError IO ()
+  afterEvent  :: EffT' c (mod : mods) es IO ()
   afterEvent = return ()
   {-# INLINE afterEvent #-}
 
-  moduleEvent :: EffT' c (mod : mods) NoError IO (STM (ModuleEvent mod))
+  moduleEvent :: EffT' c (mod : mods) es IO (STM (ModuleEvent mod))
   moduleEvent = return empty
   {-# INLINE moduleEvent #-}
 
-  handleEvent :: ModuleEvent mod -> EffT' c (mod : mods) NoError IO ()
+  handleEvent :: ModuleEvent mod -> EffT' c (mod : mods) es IO ()
   handleEvent _ = return ()
   {-# INLINE handleEvent #-}
 
-  releaseModule :: EffT' c (mod : mods) NoError IO () -- ^ release resources, quit module
-  releaseModule = return ()
-  {-# INLINE releaseModule #-}
+  -- releaseModule :: EffT' c (mod : mods) es IO () -- ^ release resources, quit module
+  -- releaseModule = return ()
+  -- {-# INLINE releaseModule #-}
 
 data family ModuleInitDataHardCode mod :: Type
 
-class Loadable c mod mods => LoadableEnv c mod mods where
-  readInitDataFromEnv :: ModuleInitDataHardCode mod -> EffT' c '[] '[SystemError] IO (ModuleInitData mod)
+class Loadable c mod mods es => LoadableEnv c mod mods es where
+  readInitDataFromEnv :: ModuleInitDataHardCode mod -> EffT' c '[] es IO (ModuleInitData mod)
   -- ^ Read module init data from environment, or other means
   -- one can change this to SystemInitData mods -> IO (ModuleInitData mod)
 
-class Loadable c mod mods => LoadableArgs c mod mods where
-  readInitDataFromArgs :: ModuleInitDataHardCode mod -> [String] -> EffT' c '[] '[SystemError] IO (ModuleInitData mod)
+class Loadable c mod mods es => LoadableArgs c mod mods es where
+  readInitDataFromArgs :: ModuleInitDataHardCode mod -> [String] -> EffT' c '[] es IO (ModuleInitData mod)
   -- ^ Read module init data from command line arguments, or using comand line arguments to read other things
   -- one can change this to SystemInitData mods -> [String] -> IO (ModuleInitData mod)
 
@@ -112,32 +112,29 @@ class Loadable c mod mods => LoadableArgs c mod mods where
 --
 -- the last module in the list is the first to be loaded
 -- and also the first to execute beforeEvent and afterEvent
-class System c mods where
-  initAllModules :: ConsFDataList c mods => SystemInitData c mods -> EffT' c '[] '[SystemError] IO (SystemRead c mods, SystemState c mods)
+class System c mods es where
+  withAllModules :: ConsFDataList c mods => SystemInitData c mods -> EffT' c mods es IO a -> EffT' c '[] es IO a
 
-  listenToEvents :: ConsFDataList c mods => EffT' c mods '[] IO (STM (SystemEvent mods))
+  listenToEvents :: ConsFDataList c mods => EffT' c mods es IO (STM (SystemEvent mods))
 
-  handleEvents :: ConsFDataList c mods => SystemEvent mods -> EffT' c mods '[] IO ()
+  handleEvents :: ConsFDataList c mods => SystemEvent mods -> EffT' c mods es IO ()
 
-  beforeSystem :: ConsFDataList c mods => EffT' c mods '[] IO ()
+  beforeSystem :: ConsFDataList c mods => EffT' c mods es IO ()
 
-  afterSystem  :: ConsFDataList c mods => EffT' c mods '[] IO ()
+  afterSystem  :: ConsFDataList c mods => EffT' c mods es IO ()
 
-  releaseSystem :: ConsFDataList c mods => EffT' c mods '[] IO ()
-  -- ^ safely release all resources system acquired
-  -- Warning: releaseSystem is done in reverse order of initAllModules
-  -- i.e. the head of the list is the first to be released
 
-class System c mods => SystemEnv c mods where
-  readSystemInitDataFromEnv :: ConsFDataList c mods => SystemInitDataHardCode' c mods -> EffT' c '[] '[SystemError] IO (SystemInitData c mods)
+class System c mods es => SystemEnv c mods es where
+  readSystemInitDataFromEnv :: ConsFDataList c mods => SystemInitDataHardCode' c mods -> EffT' c '[] es IO (SystemInitData c mods)
 
-class System c mods => SystemArgs c mods where
-  readSystemInitDataFromArgs :: ConsFDataList c mods => SystemInitDataHardCode' c mods -> [String] -> EffT' c '[] '[SystemError] IO (SystemInitData c mods)
+class System c mods es => SystemArgs c mods es where
+  readSystemInitDataFromArgs :: ConsFDataList c mods => SystemInitDataHardCode' c mods -> [String] -> EffT' c '[] es IO (SystemInitData c mods)
 
 -- | base case for system
-instance System c '[] where
-  initAllModules _ = return (fNil, fNil)
-  {-# INLINE initAllModules #-}
+instance System c '[] es where
+  withAllModules _ = id
+  -- return (fNil, fNil)
+  {-# INLINE withAllModules #-}
 
   listenToEvents = return empty
   {-# INLINE listenToEvents #-}
@@ -151,61 +148,48 @@ instance System c '[] where
   afterSystem = return ()
   {-# INLINE afterSystem #-}
 
-  releaseSystem = return ()
-  {-# INLINE releaseSystem #-}
-
-instance SystemEnv c '[] where
+instance SystemEnv c '[] es where
   readSystemInitDataFromEnv _ = return fNil
   {-# INLINE readSystemInitDataFromEnv #-}
 
-instance SystemArgs c '[] where
+instance SystemArgs c '[] es where
   readSystemInitDataFromArgs _ _ = do
     return fNil
   {-# INLINE readSystemInitDataFromArgs #-}
 
 -- | Inductive instance for system
-instance (SystemModule mod, System c mods, Loadable c mod mods) => System c (mod ': mods) where
-  initAllModules (x :*** xs) = do
-    (rs, ss)  <- initAllModules xs
-    (er, ss') <- liftIO $ runEffT rs ss $ initModule @c @mod x
-    case er of
-      RSuccess (r', s') -> return (r' :*** rs, s' :*** ss')
-      RFailure (EHead e) -> effThrowIn e
-  {-# INLINE initAllModules #-}
+instance (SystemModule mod, System c mods es, Loadable c mod mods es) => System c (mod ': mods) es where
+  withAllModules (x :*** xs) = withAllModules xs . withModule @c @mod x
+  {-# INLINE withAllModules #-}
 
   beforeSystem = do
-    embedEffT $ beforeSystem @c @mods
+    embedMods $ beforeSystem @c @mods
     beforeEvent @c @mod
   {-# INLINE beforeSystem #-}
 
   afterSystem = do
-    embedEffT $ afterSystem @c @mods
+    embedMods $ afterSystem @c @mods
     afterEvent @c @mod
   {-# INLINE afterSystem #-}
 
   listenToEvents = do
-    tailEvents <- embedEffT $ listenToEvents @c @mods
+    tailEvents <- embedMods $ listenToEvents @c @mods
     headEvent  <- moduleEvent @c @mod
     return $ UHead <$> headEvent <|> UTail <$> tailEvents
   {-# INLINE listenToEvents #-}
 
   handleEvents (UHead x) = handleEvent @c @mod x
-  handleEvents (UTail xs) = embedEffT $ handleEvents @_ @mods xs
+  handleEvents (UTail xs) = embedMods $ handleEvents @_ @mods xs
   {-# INLINE handleEvents #-}
 
-  releaseSystem = do
-    releaseModule @c @mod
-    embedEffT $ releaseSystem @c @mods
-  {-# INLINE releaseSystem #-}
-
-instance (SubList c mods (mod:mods), SystemModule mod, SystemEnv c mods, Loadable c mod mods, LoadableEnv c mod mods) => SystemEnv c (mod ': mods) where
+instance (SubList c mods (mod:mods), SystemModule mod, SystemEnv c mods es, Loadable c mod mods es, LoadableEnv c mod mods es) => SystemEnv c (mod ': mods) es where
   readSystemInitDataFromEnv (im :*** ims) = do
     xs <- readSystemInitDataFromEnv @c @mods ims
     x  <- readInitDataFromEnv @c @mod @mods im
     return $ x :*** xs
   {-# INLINE readSystemInitDataFromEnv #-}
 
-instance (SubList c mods (mod:mods), SystemModule mod, SystemArgs c mods, Loadable c mod mods, LoadableArgs c mod mods) => SystemArgs c (mod ': mods) where
+instance (SubList c mods (mod:mods), SystemModule mod, SystemArgs c mods es, Loadable c mod mods es, LoadableArgs c mod mods es) => SystemArgs c (mod ': mods) es where
   readSystemInitDataFromArgs (im :*** ims) args = do
     xs <- readSystemInitDataFromArgs @c @mods ims args
     x  <- readInitDataFromArgs @c @mod @mods im args

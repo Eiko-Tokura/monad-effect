@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Provides ResourceT functionality for managing resources
 module Module.Resource where
@@ -26,8 +26,10 @@ instance (In' c Resource mods, MonadIO m) => MonadResource (EffT' c mods es m) w
   liftResourceT = \ResourceT{unResourceT} -> do
     rMap <- asksModule resourceRead
     liftIO $ unResourceT rMap
+  {-# INLINE liftResourceT #-}
 
-instance Loadable c Resource mods where
-  initModule _ = do
-    istate <- createInternalState
-    return (ResourceRead istate, ResourceState)
+instance ConsFDataList c (Resource : mods) => Loadable c Resource mods es where
+  withModule _ act = bracketEffT createInternalState closeInternalState
+    (\istate -> runEffTOuter_ (ResourceRead istate) ResourceState act
+    )
+  {-# INLINE withModule #-}
