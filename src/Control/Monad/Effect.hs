@@ -8,20 +8,28 @@ module Control.Monad.Effect
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
   , ErrorText(..), errorText, ErrorValue(..), errorValue, MonadThrowError(..)
   , MonadFailError(..)
+
+  -- * Natural Transformation
+  , baseTransform
+
   -- * Embedding effects
   , embedEffT, embedMods, embedError
+
   -- * Running EffT
   , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
   , runEffTNoError
   , runEffTOuter, runEffTOuter', runEffTOuter_
   , runEffTIn, runEffTIn', runEffTIn_
   , replaceEffTIn
+
   -- * Catching and throwing algebraic exceptions
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
+
   -- * Catching exceptions from base IO
   , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
+
   -- * Converting values to error
   , effEither, effEitherWith
   , effEitherIn, effEitherInWith
@@ -29,9 +37,11 @@ module Control.Monad.Effect
   , effMaybeWith, effMaybeInWith
   , pureMaybeInWith, pureEitherInWith
   , baseEitherIn, baseEitherInWith, baseMaybeInWith
+
   -- * Converting error to values
   , errorToEither, errorToEitherAll, eitherAllToEffect, errorInToEither
   , errorToMaybe, errorInToMaybe
+
   -- * Lifting IO
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
 
@@ -66,11 +76,11 @@ module Control.Monad.Effect
   , In, InL
   , module Data.TypeList.ConsFData.Pattern
   , fNil
+
   -- * Result types
   , Result(..), EList(..)
   ) where
 
--- import Control.Parallel.Strategies
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception as E hiding (TypeError)
@@ -260,6 +270,13 @@ instance (Monad m, InList MonadFailError es) => MonadFail (EffT' c mods es m) wh
   fail = effThrowIn . MonadFailError
   {-# INLINE fail #-}
 
+baseTransform :: ( forall a. m a -> n a ) -> EffT' c mods es m b -> EffT' c mods es n b
+baseTransform f = \(EffT' eff) -> EffT' $ \rs ss -> f (eff rs ss)
+{-# INLINE baseTransform #-}
+
+---------------------------------------------------------
+-- bracket patterns
+--
 -- | Mask asynchronous exceptions in the base monad,
 -- an `unMask` function is provided to the argument to selectively unmask parts of the computation
 maskEffT
@@ -830,6 +847,3 @@ effMaybeInWith e eff = EffT' $ \rs ss -> do
 
 effEitherSystemException :: (Monad m, Exception e, InList SystemError es) => EffT' c mods es m (Either e a) -> EffT' c mods es m a
 effEitherSystemException = effEitherInWith $ SystemErrorException . toException
-
----------------------------------------------------------
--- bracket patterns
