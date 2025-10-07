@@ -3,6 +3,8 @@
 -- simple and extensible state and read effects.
 module Control.Monad.RS.Class where
 
+import Control.Monad.Trans
+
 -- | A class for monads that can read a value of type 'r'.
 -- without the functional dependencies, so you can read different types of values
 -- This ReadOnly has no 'local' method
@@ -39,4 +41,15 @@ class Monad m => MonadStateful s m where
   modify f = do
     s <- get
     put (f s)
+  {-# INLINE modify #-}
+
+instance {-# OVERLAPPABLE #-} (MonadTrans t, MonadReadOnly r m) => MonadReadOnly r (t m) where
+  query = lift query
+  {-# INLINE query #-}
+instance {-# OVERLAPPABLE #-} (MonadTrans t, MonadStateful s m) => MonadStateful s (t m) where
+  get = lift get
+  {-# INLINE get #-}
+  put = lift . put
+  {-# INLINE put #-}
+  modify = lift . modify
   {-# INLINE modify #-}
