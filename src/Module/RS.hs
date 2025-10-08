@@ -16,6 +16,8 @@ import Data.Bifunctor (second)
 import GHC.TypeLits
 import qualified Control.Monad.State as S
 
+import Control.System
+
 -- | A module that provides reader functionality
 data RModule (r :: Type)
 
@@ -58,6 +60,16 @@ instance Module (SNamed name s) where
 instance SystemModule (SNamed name s) where
   newtype ModuleInitData (SNamed name s) = SNamedInitData { sNamedInitState :: s }
   data    ModuleEvent (SNamed name s)    = SNamedEvent
+
+instance Loadable c (RModule r) mods ies where
+  withModule (RInitData r) = runEffTOuter_ (RRead r) RState
+  {-# INLINE withModule #-}
+instance EventLoop c (RModule r) mods es
+
+instance Loadable c (SModule s) mods ies where
+  withModule (SInitData s) = runEffTOuter_ SRead (SState s)
+  {-# INLINE withModule #-}
+instance EventLoop c (SModule s) mods es
 
 embedStateT :: forall s mods errs m c a. (Monad m, In' c (SModule s) mods) => S.StateT s (EffT' c mods errs m) a -> EffT' c mods errs m a
 embedStateT action = do

@@ -41,6 +41,9 @@ module Control.Monad.Effect
   -- * Converting error to values
   , errorToEither, errorToEitherAll, eitherAllToEffect, errorInToEither
   , errorToMaybe, errorInToMaybe
+  
+  -- * Transforming error
+  , mapError
 
   -- * Lifting IO
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
@@ -630,6 +633,16 @@ effTryIOInWith f eff = EffT' $ \rs ss -> do
     Right (eResult, stateMods) -> return (eResult, stateMods)
 {-# INLINE effTryIOInWith #-}
 
+-- | Transform the first error in the error list
+mapError :: Monad m => (e1 -> e2) -> EffT' c mods (e1 : es) m a -> EffT' c mods (e2 : es) m a
+mapError f eff = EffT' $ \rs ss -> do
+  (eResult, stateMods) <- unEffT' eff rs ss
+  return (resultMapErrors (\case
+    EHead e -> EHead (f e)
+    ETail es -> ETail es)
+      eResult, stateMods)
+{-# INLINE mapError #-}
+
 -- | Convert the first error in the effect to Either
 errorToEither :: Monad m => EffT' c mods (e : es) m a -> EffT' c mods es m (Either e a)
 errorToEither eff = EffT' $ \rs ss -> do
@@ -745,12 +758,12 @@ effCatchAll eff h = EffT' $ \rs ss -> do
 {-# INLINE effCatchAll #-}
 
 -- | Throw into the error list
-effThrowIn :: (Monad m, InList e es) => e -> EffT' c mods es m a
+effThrowIn :: forall e c mods es m a. (Monad m, InList e es) => e -> EffT' c mods es m a
 effThrowIn e = EffT' $ \_ s -> pure (RFailure $ embedE e, s)
 {-# INLINE effThrowIn #-}
 
 -- | Throw into the error list
-effThrow :: (Monad m, InList e es) => e -> EffT' c mods es m a
+effThrow :: forall e c mods es m a. (Monad m, InList e es) => e -> EffT' c mods es m a
 effThrow = effThrowIn
 {-# INLINE effThrow #-}
 
