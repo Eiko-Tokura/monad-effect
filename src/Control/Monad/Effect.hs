@@ -27,7 +27,8 @@ module Control.Monad.Effect
   , effCatchIn, effCatchIn'
   , effThrow, effThrowIn
 
-  -- * Catching exceptions from base IO
+  -- * Catching exceptions from base
+  , effTry, effTryIn, effTryWith, effTryInWith
   , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
 
   -- * Converting values to error
@@ -52,7 +53,7 @@ module Control.Monad.Effect
   , maskEffT, generalBracketEffT, bracketEffT
 
   -- * Concurrency
-  , forkEffT, forkEffTSafe, asyncEffT
+  , forkEffT, forkEffTFinally, forkEffTSafe, asyncEffT
 
   -- * No Error
   , checkNoError
@@ -253,12 +254,12 @@ instance MonadBaseControl b m => MonadBaseControl b (EffT' c mods es m) where
   -- _
 
 -- | The error in throwM is thrown as MonadThrowError, which is a wrapper for SomeException.
-instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadThrow (EffT' c mods es m) where
+instance (Monad m, InList MonadThrowError es) => MonadThrow (EffT' c mods es m) where
   throwM = effThrowIn . MonadThrowError . toException
   {-# INLINE throwM #-}
 
 -- | this can only catch MonadThrowError, other errors are algebraic and should be caught by effCatch, effCatchIn, effCatchAll
-instance (Monad m, ConsFDataList c mods, InList MonadThrowError es) => MonadCatch (EffT' c mods es m) where
+instance (Monad m, InList MonadThrowError es) => MonadCatch (EffT' c mods es m) where
   catch ma handler = effCatchIn' ma $ \(MonadThrowError e) ->
     case fromException e of
       Just e' -> handler e'
@@ -333,6 +334,24 @@ forkEffT eff = EffT' $ \rs ss -> do
   -- return the ThreadId and the original state
   return (RSuccess forkedEff, ss)
 {-# INLINE forkEffT #-}
+
+-- | Forks and runs the finalizer when the thread ends, either normally or via exception.
+forkEffTFinally :: forall c mods es noError m a.
+  ( MonadIO m
+  , MonadBaseControl IO m
+  , MonadMask m
+  , SubListEmbed es (AddIfNotElem SomeAsyncException es)
+  , InList SomeAsyncException (AddIfNotElem SomeAsyncException es)
+  )
+  => EffT' c mods es m a
+  -> ((Result (AddIfNotElem SomeAsyncException es) a, SystemState c mods) -> EffT' c mods NoError m ())
+  -> EffT' c mods noError m ThreadId
+forkEffTFinally eff finalizer = embedError $ do
+  rs <- query
+  ss <- get
+  maskEffT $ \unmask -> forkEffT $ do
+    eres <- lift $ unEffT' (effTryIn @SomeAsyncException $ embedError $ unmask eff) rs ss
+    finalizer eres
 
 -- | The states on the separate thread will diverge, and will be discarded.
 -- forces you to deal with all the exceptions inside the thread, so the thread won't die in an unexpected way.
@@ -600,6 +619,38 @@ liftIOSafeWith f io = EffT' $ \_ s -> do
     Right a' -> return (RSuccess a', s)
     Left e'  -> return (RFailure $ EHead $ f e', s)
 {-# INLINE liftIOSafeWith #-}
+
+-- | Try in the base monad (with MonadCatch), adding as the first error in the error list.
+effTry :: (Exception e, MonadCatch m) => EffT' c mods es m a -> EffT' c mods (e : es) m a
+effTry eff = EffT' $ \rs ss -> do
+  ePair <- Catch.try (unEffT' eff rs ss)
+  case ePair of
+    Left e -> return (RFailure $ EHead e, ss)
+    Right (eResult, stateMods) -> return (resultMapErrors ETail eResult, stateMods)
+{-# INLINE effTry #-}
+
+effTryWith :: forall e e' es c mods m a. (Exception e, MonadCatch m)
+  => (e -> e') -> EffT' c mods es m a -> EffT' c mods (e' : es) m a
+effTryWith f eff = EffT' $ \rs ss -> do
+  ePair <- Catch.try (unEffT' eff rs ss)
+  case ePair of
+    Left e -> return (RFailure $ EHead $ f e, ss)
+    Right (eResult, stateMods) -> return (resultMapErrors ETail eResult, stateMods)
+{-# INLINE effTryWith #-}
+
+effTryInWith :: forall e e' es c mods m a. (Exception e, MonadCatch m, InList e' es)
+  => (e -> e') -> EffT' c mods es m a -> EffT' c mods es m a
+effTryInWith f eff = EffT' $ \rs ss -> do
+  ePair <- Catch.try (unEffT' eff rs ss)
+  case ePair of
+    Left e                     -> return (RFailure $ embedE $ f e, ss)
+    Right (eResult, stateMods) -> return (eResult, stateMods)
+{-# INLINE effTryInWith #-}
+
+effTryIn :: forall e es c mods m a. (Exception e, MonadCatch m, InList e es)
+  => EffT' c mods es m a -> EffT' c mods es m a
+effTryIn = effTryInWith @e id
+{-# INLINE effTryIn #-}
 
 -- | @try@ on the Base monad IO, adding as the first error in the error list.
 -- It is recommended that you wrap low-level routines into algebraic error in the first place instead of using this function.
