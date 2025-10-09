@@ -20,7 +20,7 @@ module Control.System
   , Dependency, Dependency'
 
   -- * Small utils
-  , detectFlag
+  , detectFlag, detectAllFlags
 
   ) where
 
@@ -28,8 +28,9 @@ import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.Effect
 import Data.Kind
-import Data.TypeList
+import Data.Maybe
 import Data.Text (Text)
+import Data.TypeList
 
 type family DependencyW (mod :: Type) (deps :: [Type]) (mods :: [Type]) :: Constraint where
   DependencyW mod '[] mods = mod `In` (mod : mods)
@@ -133,9 +134,12 @@ instance (SystemModule mod, EventLoop c mod mods es, EventLoopSystem c mods es) 
   {-# INLINE handleEvents #-}
 
 detectFlag :: String -> (String -> Either Text a) -> [String] -> Maybe (Either Text a)
-detectFlag _ _ [] = Nothing
-detectFlag flag parser list = go list
+detectFlag flag parser = listToMaybe . detectAllFlags flag parser
+
+detectAllFlags :: String -> (String -> Either Text a) -> [String] -> [Either Text a]
+detectAllFlags _ _ [] = []
+detectAllFlags flag parser list = go list
   where
-    go (x:y:xs) | x == flag = Just (parser y)
+    go (x:y:xs) | x == flag = parser y : go xs
                 | otherwise = go (y:xs)
-    go _ = Nothing
+    go _ = []
