@@ -123,6 +123,18 @@ class SubList (flist :: (Type -> Type) -> [Type] -> Type) (ys :: [Type]) (xs :: 
 class SubListEmbed (ys :: [Type]) (xs :: [Type]) where
   subListResultEmbed :: Result ys a -> Result xs a -- ^ Embed the result of a sublist operation.
 
+class NonEmptySubList (ys :: [Type]) (xs :: [Type]) where
+  subListEListEmbed :: EList ys -> EList xs
+
+instance NonEmptySubList '[x] (x:xs) where
+  subListEListEmbed (EHead x) = EHead x
+  {-# INLINE subListEListEmbed #-}
+
+instance (InList y xs, NonEmptySubList ys xs) => NonEmptySubList (y:ys) xs where
+  subListEListEmbed (EHead y)  = embedE y
+  subListEListEmbed (ETail ys) = subListEListEmbed ys
+  {-# INLINE subListEListEmbed #-}
+
 subListUpdateF :: (SubList flist ys xs) => flist f xs -> flist f ys -> flist f xs
 subListUpdateF xs ys = subListModifyF (const ys) xs
 {-# INLINE subListUpdateF #-}

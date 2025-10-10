@@ -1,4 +1,4 @@
-{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, LinearTypes #-}
+{-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, LinearTypes, QuantifiedConstraints #-}
 -- | Module: Control.Monad.Effect
 -- Description: The module you should import to use for effectful computation
 --
@@ -25,7 +25,7 @@ module Control.Monad.Effect
   -- * Catching and throwing algebraic exceptions
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
-  , effThrow, effThrowIn
+  , effThrow, effThrowIn, effThrowEList, effThrowEListIn
 
   -- * Catching exceptions from base
   , effTry, effTryIn, effTryWith, effTryInWith
@@ -41,7 +41,7 @@ module Control.Monad.Effect
 
   -- * Converting error to values
   , errorToEither, errorToEitherAll, eitherAllToEffect, errorInToEither
-  , errorToMaybe, errorInToMaybe
+  , errorToMaybe, errorInToMaybe, errorToResult
   
   -- * Transforming error
   , mapError
@@ -52,8 +52,12 @@ module Control.Monad.Effect
   -- * Bracket pattern
   , maskEffT, generalBracketEffT, bracketEffT
 
+  -- * Looping
+  , foreverEffT
+
   -- * Concurrency
   , forkEffT, forkEffTFinally, forkEffTSafe, asyncEffT
+  , asyncEffT_, restoreAsync, restoreAsync_
 
   -- * No Error
   , checkNoError
@@ -280,6 +284,12 @@ baseTransform :: ( forall a. m a -> n a ) -> EffT' c mods es m b -> EffT' c mods
 baseTransform f = \(EffT' eff) -> EffT' $ \rs ss -> f (eff rs ss)
 {-# INLINE baseTransform #-}
 
+-- | Do not use Control.Applicative.forever, use this instead
+foreverEffT :: Monad m => EffT' c mods es m a -> EffT' c mods es m never_returns
+foreverEffT eff = do
+  _ <- eff
+  foreverEffT eff
+{-# INLINE foreverEffT #-}
 ---------------------------------------------------------
 -- bracket patterns
 --
@@ -361,12 +371,50 @@ forkEffTSafe = forkEffT
 
 -- | The states on the separate thread will diverge, and will be returned as an Async type.
 asyncEffT
-  :: forall c mods es m a. (MonadIO m, MonadBaseControl IO m)
+  :: forall c mods es m a. (MonadBaseControl IO m)
   => EffT' c mods es m a -> EffT' c mods NoError m (Async (StM m (Result es a, SystemState c mods)))
 asyncEffT eff = EffT' $ \rs ss -> do
   asyncEff <- liftBaseWith $ \runInBase -> async (runInBase $ unEffT' eff rs ss)
   return (RSuccess asyncEff, ss)
 {-# INLINE asyncEffT #-}
+
+-- | A simpler version of asyncEffT that only returns the Result value, discarding the new state.
+asyncEffT_ ::
+  ( MonadIO m
+  , MonadBaseControl IO m
+  , StM m (Result es a, SystemState c mods) ~ (Result es a, SystemState c mods)
+  )
+  => EffT' c mods es m a -> EffT' c mods NoError m (Async (Result es a))
+asyncEffT_ eff = fmap fst <$> asyncEffT eff
+{-# INLINE asyncEffT_ #-}
+
+-- | Restores the EffT' computation from an Async value created by asyncEffT.
+-- State will be replaced by the state inside the Async when it finishes.
+restoreAsync ::
+  ( MonadIO m, MonadBaseControl IO m )
+  => Async (StM m (Result es a, SystemState c mods)) -> EffT' c mods es m a
+restoreAsync asyncSt = EffT' $ \_ _ -> do
+  res' <- liftIO $ do
+    res <- liftIO (wait asyncSt)
+    return $ restoreM res
+  (ea, ss') <- res'
+  return (ea, ss')
+{-# INLINE restoreAsync #-}
+
+-- | Restores the EffT' computation from an Async value created by asyncEffT.
+-- But the state on the current thread is kept, discarding the state inside the Async when it finishes.
+restoreAsync_ :: forall c mods es m a.
+  ( MonadIO m
+  , MonadBaseControl IO m
+  )
+  => Async (StM m (Result es a, SystemState c mods)) -> EffT' c mods es m a
+restoreAsync_ asyncSt = EffT' $ \_ ss -> do
+  res' <- liftIO $ do
+    res <- liftIO (wait asyncSt)
+    return $ restoreM res
+  (ea, _ss' :: SystemState c mods) <- res'
+  return (ea, ss)
+{-# INLINE restoreAsync_ #-}
 
 -- | embed smaller effect into larger effect
 embedEffT :: forall mods mods' m c es es' a. (SubList c mods mods', SubListEmbed es es', Monad m)
@@ -817,6 +865,14 @@ effThrowIn e = EffT' $ \_ s -> pure (RFailure $ embedE e, s)
 effThrow :: forall e c mods es m a. (Monad m, InList e es) => e -> EffT' c mods es m a
 effThrow = effThrowIn
 {-# INLINE effThrow #-}
+
+effThrowEList :: forall es c mods m a. (Monad m) => EList es -> EffT' c mods es m a
+effThrowEList es = EffT' $ \_ s -> pure (RFailure es, s)
+{-# INLINE effThrowEList #-}
+
+effThrowEListIn :: forall es es' c mods m a. (Monad m, NonEmptySubList es es') => EList es -> EffT' c mods es' m a
+effThrowEListIn es = EffT' $ \_ s -> pure (RFailure $ subListEListEmbed es, s)
+{-# INLINE effThrowEListIn #-}
 
 -- | Turn an Either return type into the error list with a function, adding the error type if it is not already in the error list.
 -- The inner monad type needs to be precise due to the way type inference works.

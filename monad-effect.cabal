@@ -73,6 +73,7 @@ library
     -- | This is a small library that gets benefit from inlining and specialisation.
     -- therefore we turn on these optimisations
     ghc-options: -O2 -fexpose-all-unfoldings -fspecialise-aggressively -flate-dmd-anal
+    -- -finfo-table-map -fdistinct-constructor-tables -ddump-to-file -ddump-splices
 
     -- Modules exported by the library.
     exposed-modules:  Control.Monad.Effect

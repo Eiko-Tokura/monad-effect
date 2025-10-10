@@ -181,8 +181,7 @@ getsS f = do
 {-# INLINE getsS #-}
 
 putS :: forall s mods errs c m. (Monad m, In' c (SModule s) mods) => s -> EffT' c mods errs m ()
-putS s = do
-  SState _ <- getModule @(SModule s)
+putS !s = do
   putModule @(SModule s) (SState s)
 {-# INLINE putS #-}
 

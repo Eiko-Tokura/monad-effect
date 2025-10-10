@@ -124,7 +124,7 @@ generateFDataByIndexInstance idx len = do
   ----------------------------------------------------------------------
       getClause =
         Clause [ WildP
-               , ConP conName [] (mkGetPats len idx xiName)
+               , BangP $ ConP conName [] (mkGetPats len idx xiName)
                ]
                (NormalB (VarE xiName))
                []
@@ -143,7 +143,7 @@ generateFDataByIndexInstance idx len = do
       modifyClause =
         Clause [ WildP
                , VarP fName
-               , ConP conName [] patVars
+               , BangP $ ConP conName [] patVars
                ]
                (NormalB modifyBody)
                []
@@ -166,7 +166,7 @@ generateFDataByIndexInstance idx len = do
       lensClause =
         Clause [ WildP
                , VarP gName
-               , ConP conName [] patVars
+               , BangP $ ConP conName [] patVars
                ]
                (NormalB lensBody)
                []
