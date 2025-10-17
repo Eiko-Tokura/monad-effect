@@ -378,9 +378,9 @@ asyncEffT eff = EffT' $ \rs ss -> do
   return (RSuccess asyncEff, ss)
 {-# INLINE asyncEffT #-}
 
--- | Note: this function seems to be a bit problematic,
+-- Note: this function seems to be a bit problematic,
 -- it seems to cause memory leak. Needs investigation.
--- -- | A simpler version of asyncEffT that only returns the Result value, discarding the new state.
+-- -- A simpler version of asyncEffT that only returns the Result value, discarding the new state.
 -- asyncEffT_ ::
 --   ( MonadIO m
 --   , MonadBaseControl IO m
