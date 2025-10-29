@@ -46,6 +46,9 @@ module Control.Monad.Effect
   -- * Transforming error
   , mapError
 
+  -- * Re exporting
+  , lift
+
   -- * Lifting IO
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
 
