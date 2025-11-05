@@ -381,18 +381,6 @@ asyncEffT eff = EffT' $ \rs ss -> do
   return (RSuccess asyncEff, ss)
 {-# INLINE asyncEffT #-}
 
--- Note: this function seems to be a bit problematic,
--- it seems to cause memory leak. Needs investigation.
--- -- A simpler version of asyncEffT that only returns the Result value, discarding the new state.
--- asyncEffT_ ::
---   ( MonadIO m
---   , MonadBaseControl IO m
---   , StM m (Result es a, SystemState c mods) ~ (Result es a, SystemState c mods)
---   )
---   => EffT' c mods es m a -> EffT' c mods NoError m (Async (Result es a))
--- asyncEffT_ eff = fmap fst <$> asyncEffT eff
--- {-# INLINE asyncEffT_ #-}
-
 -- | Restores the EffT' computation from an Async value created by asyncEffT.
 -- State will be replaced by the state inside the Async when it finishes.
 restoreAsync ::
