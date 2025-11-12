@@ -1,4 +1,6 @@
 {-# LANGUAGE DerivingVia, AllowAmbiguousTypes, UndecidableInstances, LinearTypes, QuantifiedConstraints #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant lambda" #-}
 -- | Module: Control.Monad.Effect
 -- Description: The module you should import to use for effectful computation
 --
@@ -42,7 +44,7 @@ module Control.Monad.Effect
   -- * Converting error to values
   , errorToEither, errorToEitherAll, eitherAllToEffect, errorInToEither
   , errorToMaybe, errorInToMaybe, errorToResult
-  
+
   -- * Transforming error
   , mapError
 
@@ -53,13 +55,14 @@ module Control.Monad.Effect
   , liftIOException, liftIOAt, liftIOSafeWith, liftIOText, liftIOPrepend
 
   -- * Bracket pattern
-  , maskEffT, generalBracketEffT, bracketEffT
+  , maskEffT, generalBracketEffT, bracketEffT, bracketOnErrorEffT
 
   -- * Looping
   , foreverEffT
 
   -- * Concurrency
-  , forkEffT, forkEffTFinally, forkEffTSafe, asyncEffT
+  , forkEffT, forkEffTFinally, forkEffTSafe
+  , asyncEffT, withAsyncEffT
   , restoreAsync, restoreAsync_
 
   -- * No Error
@@ -93,7 +96,9 @@ module Control.Monad.Effect
   ) where
 
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Concurrent.Async
+import Control.Concurrent.Async.Internal (Async(..))
 import Control.Exception as E hiding (TypeError)
 import Control.Monad
 import Control.Monad.Base
@@ -338,9 +343,23 @@ bracketEffT acquire release = generalBracketEffT
   )
 {-# INLINABLE bracketEffT #-}
 
+-- | Like bracketEffT, but the release function is only called when the inner computation fails with exception (algebraic). If the use action normally returns (RSuccess), then the release action is not ran.
+bracketOnErrorEffT :: (MonadMask m, HasCallStack)
+  => EffT' c mods es m t
+  -> (t -> EffT' c mods es m a)
+  -> (t -> EffT' c mods es m o)
+  -> EffT' c mods es m o
+bracketOnErrorEffT acquire release = generalBracketEffT
+  acquire
+  (\a result -> case result of
+      RSuccess b -> return b
+      RFailure e -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
+  )
+{-# INLINABLE bracketOnErrorEffT #-}
+
 -- | The states on the separate thread will diverge, and will be discarded.
 -- when exception occurs, the thread quits
-forkEffT :: forall c mods es m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods es m () -> EffT' c mods NoError m ThreadId
+forkEffT :: forall c mods es m noError ignored. (MonadBaseControl IO m) => EffT' c mods es m ignored -> EffT' c mods noError m ThreadId
 forkEffT eff = EffT' $ \rs ss -> do
   -- run the EffT' computation in a separate thread
   forkedEff <- liftBaseWith $ \runInBase -> forkIO (void $ runInBase $ unEffT' eff rs ss)
@@ -359,7 +378,7 @@ forkEffTFinally :: forall c mods es noError m a.
   => EffT' c mods es m a
   -> ((Result (AddIfNotElem SomeAsyncException es) a, SystemState c mods) -> EffT' c mods NoError m ())
   -> EffT' c mods noError m ThreadId
-forkEffTFinally eff finalizer = embedError $ do
+forkEffTFinally eff finalizer = do
   rs <- query
   ss <- get
   maskEffT $ \unmask -> forkEffT $ do
@@ -380,6 +399,35 @@ asyncEffT eff = EffT' $ \rs ss -> do
   asyncEff <- liftBaseWith $ \runInBase -> async (runInBase $ unEffT' eff rs ss)
   return (RSuccess asyncEff, ss)
 {-# INLINE asyncEffT #-}
+
+-- | Generalized version of withAsync, spawn asynchronous action in separate thread.
+--
+-- * When the use handle encounters algebraic exception
+--
+-- * Or when the async action ends in any possible way, (algebraic / SomeException / returns)
+--
+-- the async thread will be killed with uninterruptibleCancel.
+--
+-- * try @SomeException is used on the async action, to be compatible with the Async type.
+withAsyncEffT
+  :: forall c mods es m a b eff result
+  . ( MonadBaseControl IO m
+    , MonadMask m
+    , eff ~ EffT' c mods es m
+    , result ~ StM m (Result es a, SystemState c mods)
+    )
+  => eff a -> (Async result -> eff b) -> eff b
+withAsyncEffT = \action use -> do
+  tmvar <- liftBase newEmptyTMVarIO
+  maskEffT $ \unmaskEffT -> do
+    tid <- liftBaseWith $ \runInBase -> forkIO $ E.try @SomeException (runInBase $ unmaskEffT action) >>= liftBase . atomically . writeTMVar tmvar
+    let asyncHandle = Async tid (readTMVar tmvar)
+    r <- use asyncHandle `effCatchAll` \e -> do
+      liftBase $ uninterruptibleCancel asyncHandle
+      effThrowEList e
+    liftBase $ uninterruptibleCancel asyncHandle
+    return r
+{-# INLINABLE withAsyncEffT #-}
 
 -- | Restores the EffT' computation from an Async value created by asyncEffT.
 -- State will be replaced by the state inside the Async when it finishes.
@@ -841,7 +889,7 @@ effCatchIn' eff h = EffT' $ \rs ss -> do
 
 -- | Catch all errors in the error list, and handle it with a handler function. You can pattern match on `EList es` to handle the errors.
 -- Removes all errors from the error list.
-effCatchAll :: Monad m => EffT' c mods es m a -> (EList es -> EffT' c mods NoError m a) -> EffT' c mods NoError m a
+effCatchAll :: Monad m => EffT' c mods es m a -> (EList es -> EffT' c mods noError m a) -> EffT' c mods noError m a
 effCatchAll eff h = EffT' $ \rs ss -> do
   (er, stateMods) <- unEffT' eff rs ss
   case er of
