@@ -105,6 +105,7 @@ import Control.Monad.Base
 import Control.Monad.Catch as Catch
 import Control.Monad.IO.Class
 import Control.Monad.RS.Class
+import Control.Monad.Class.Except
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.Bifunctor
@@ -288,6 +289,12 @@ instance (Monad m, InList MonadFailError es) => MonadFail (EffT' c mods es m) wh
   fail = effThrowIn . MonadFailError
   {-# INLINE fail #-}
 
+-- | Throw into the error list.
+--
+-- @since 0.2.2.0
+instance (Monad m, InList e es) => MonadExcept e (EffT' c mods es m) where
+  throwExcept = effThrowIn
+
 baseTransform :: ( forall a. m a -> n a ) -> EffT' c mods es m b -> EffT' c mods es n b
 baseTransform f = \(EffT' eff) -> EffT' $ \rs ss -> f (eff rs ss)
 {-# INLINE baseTransform #-}
@@ -344,6 +351,8 @@ bracketEffT acquire release = generalBracketEffT
 {-# INLINABLE bracketEffT #-}
 
 -- | Like bracketEffT, but the release function is only called when the inner computation fails with exception (algebraic). If the use action normally returns (RSuccess), then the release action is not ran.
+--
+-- @since 0.2.2.0
 bracketOnErrorEffT :: (MonadMask m, HasCallStack)
   => EffT' c mods es m t
   -> (t -> EffT' c mods es m a)
@@ -409,6 +418,8 @@ asyncEffT eff = EffT' $ \rs ss -> do
 -- the async thread will be killed with uninterruptibleCancel.
 --
 -- * try @SomeException is used on the async action, to be compatible with the Async type.
+--
+-- @since 0.2.2.0
 withAsyncEffT
   :: forall c mods es m a b eff result
   . ( MonadBaseControl IO m
