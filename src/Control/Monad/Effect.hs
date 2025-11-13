@@ -66,7 +66,7 @@ module Control.Monad.Effect
 
   -- * Concurrency
   , forkEffT, forkEffTFinally, forkEffTSafe
-  , asyncEffT, withAsyncEffT
+  , asyncEffT, withAsyncEffT, withAsyncEffT'
   , restoreAsync, restoreAsync_
 
   -- * No Error
@@ -478,6 +478,7 @@ forkEffTFinally eff finalizer = do
 forkEffTSafe :: forall c mods m. (MonadIO m, MonadBaseControl IO m) => EffT' c mods NoError m () -> EffT' c mods NoError m ThreadId
 forkEffTSafe = forkEffT
 {-# INLINE forkEffTSafe #-}
+{-# DEPRECATED forkEffTSafe "The name of this funciton is confusing, will be remove in the future." #-}
 
 -- | The states on the separate thread will diverge, and will be returned as an Async type.
 asyncEffT
@@ -493,7 +494,7 @@ asyncEffT eff = EffT' $ \rs ss -> do
 
 -- | Generalized version of withAsync, spawn asynchronous action in separate thread.
 --
--- * When the use handle (second argument) encounters algebraic exception
+-- * When the use handle (second argument) encounters algebraic exception / returns normally
 --
 -- * Or when the async action (first argument) ends in any possible way, (algebraic / SomeException / returns)
 --
@@ -525,6 +526,36 @@ withAsyncEffT = \action use -> do
     liftBase $ uninterruptibleCancel asyncHandle
     return r
 {-# INLINABLE withAsyncEffT #-}
+
+-- | Similar to withAsyncEffT, but also catches (and rethrows) uncaught exceptions
+-- in the second argument.
+--
+-- @since 0.2.2.0
+withAsyncEffT'
+  :: forall c mods es es' m a b eff eff' result
+  . ( MonadBaseControl IO m
+    , MonadExcept SomeException m
+    , MonadMask m
+    , eff  ~ EffT' c mods es  m
+    , eff' ~ EffT' c mods es' m
+    , result ~ StM m (Result es' a, SystemState c mods)
+    )
+  => eff' a -> (Async result -> eff b) -> eff b
+withAsyncEffT' = \action use -> do
+  tmvar <- liftBase newEmptyTMVarIO
+  maskEffT $ \unmaskEffT -> do
+    tid <- embedNoError $ declareNoError $ liftBaseWith $ \runInBase ->
+      forkIO $ E.try @SomeException (runInBase $ unmaskEffT action)
+        >>= liftBase . atomically . writeTMVar tmvar
+    let asyncHandle = Async tid (readTMVar tmvar)
+    eR <- errorToEither (effTryUncaught (use asyncHandle)) `effCatchAll` \e -> do
+      liftBase $ uninterruptibleCancel asyncHandle
+      effThrowEList e
+    liftBase $ uninterruptibleCancel asyncHandle
+    case eR of
+      Right a             -> return a
+      Left (ErrorValue e) -> lift $ throwExcept e
+{-# INLINABLE withAsyncEffT' #-}
 
 -- | Restores the EffT' computation from an Async value created by asyncEffT.
 -- State will be replaced by the state inside the Async when it finishes.
