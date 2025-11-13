@@ -493,27 +493,31 @@ asyncEffT eff = EffT' $ \rs ss -> do
 
 -- | Generalized version of withAsync, spawn asynchronous action in separate thread.
 --
--- * When the use handle encounters algebraic exception
+-- * When the use handle (second argument) encounters algebraic exception
 --
--- * Or when the async action ends in any possible way, (algebraic / SomeException / returns)
+-- * Or when the async action (first argument) ends in any possible way, (algebraic / SomeException / returns)
 --
 -- the async thread will be killed with uninterruptibleCancel.
 --
--- * try @SomeException is used on the async action, to be compatible with the Async type.
+-- * try @SomeException is used on the async action,
+-- to be compatible with the classic Async type definition.
 --
 -- @since 0.2.2.0
 withAsyncEffT
-  :: forall c mods es m a b eff result
+  :: forall c mods es es' m a b eff eff' result
   . ( MonadBaseControl IO m
     , MonadMask m
-    , eff ~ EffT' c mods es m
-    , result ~ StM m (Result es a, SystemState c mods)
+    , eff  ~ EffT' c mods es  m
+    , eff' ~ EffT' c mods es' m
+    , result ~ StM m (Result es' a, SystemState c mods)
     )
-  => eff a -> (Async result -> eff b) -> eff b
+  => eff' a -> (Async result -> eff b) -> eff b
 withAsyncEffT = \action use -> do
   tmvar <- liftBase newEmptyTMVarIO
   maskEffT $ \unmaskEffT -> do
-    tid <- liftBaseWith $ \runInBase -> forkIO $ E.try @SomeException (runInBase $ unmaskEffT action) >>= liftBase . atomically . writeTMVar tmvar
+    tid <- embedNoError $ declareNoError $ liftBaseWith $ \runInBase ->
+      forkIO $ E.try @SomeException (runInBase $ unmaskEffT action)
+        >>= liftBase . atomically . writeTMVar tmvar
     let asyncHandle = Async tid (readTMVar tmvar)
     r <- use asyncHandle `effCatchAll` \e -> do
       liftBase $ uninterruptibleCancel asyncHandle
