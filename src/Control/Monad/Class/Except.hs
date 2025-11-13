@@ -1,6 +1,6 @@
 module Control.Monad.Class.Except where
 
-import Control.Exception
+import Control.Exception as E
 import Control.Monad.Except
 
 -- | Similar to MonadError, but with out the functional dependency so a monad can throw multiple exceptions.

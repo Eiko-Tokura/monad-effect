@@ -6,8 +6,9 @@
 --
 -- This module provides the EffT monad transformer and various functions to work with it.
 module Control.Monad.Effect
-  ( -- * EffTectful computation
+  ( -- * Effectful computation
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
+  , IO', IO'L
   , ErrorText(..), errorText, ErrorValue(..), errorValue, MonadThrowError(..)
   , MonadFailError(..)
 
@@ -32,6 +33,7 @@ module Control.Monad.Effect
   -- * Catching exceptions from base
   , effTry, effTryIn, effTryWith, effTryInWith
   , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
+  , tryAndThrow, tryAndThrowWith, tryAndThrowText
 
   -- * Converting values to error
   , effEither, effEitherWith
@@ -114,7 +116,7 @@ import Data.Kind
 import Data.Proxy
 import Data.String (IsString)
 import Data.Text (Text, unpack, pack)
-import Data.Type.Equality
+import Data.Typeable
 import Data.TypeList
 import Data.TypeList.ConsFData.Pattern
 import Data.TypeList.FData
@@ -134,12 +136,15 @@ type Eff   mods es  = EffT' FData mods es IO
 type EffT  mods es  = EffT' FData mods es
 type Pure  mods es  = EffT' FData mods es Identity
 type In    mods es  = In'   FData mods es
+-- | Error list enhanced IO
+type IO'   es       = EffT' FData '[]  es IO
 
 -- | Short hand monads which uses FList instead of FData as the data structure
 type EffL  mods es = EffT' FList mods es IO
 type EffLT mods es = EffT' FList mods es
 type PureL mods es = EffT' FList mods es Identity
 type InL   mods es = In'   FList mods es
+type IO'L  es      = EffT' FList '[]  es IO
 
 -- | A constraint that checks the error list is empty in EffT
 type family MonadNoError m :: Constraint where
@@ -188,6 +193,11 @@ instance KnownSymbol s => Show (ErrorText s) where
 
 instance (KnownSymbol s, Show v) => Show (ErrorValue s v) where
   show (ErrorValue v) = "ErrorValue of type " <> symbolVal (Proxy @s) <> ": " <> show v
+
+-- | @since 0.2.2.0
+instance KnownSymbol s                       => Exception (ErrorText s)
+-- | @since 0.2.2.0
+instance (KnownSymbol s, Typeable v, Show v) => Exception (ErrorValue s v)
 
 instance Functor m => Functor (EffT' c mods es m) where
   fmap f (EffT' eff) = EffT' $ \rs ss -> first (fmap f) <$> eff rs ss
@@ -784,6 +794,29 @@ effTryIOInWith f eff = EffT' $ \rs ss -> do
     Right (eResult, stateMods) -> return (eResult, stateMods)
 {-# INLINE effTryIOInWith #-}
 
+-------------------------------------- try (IO) and throw using MonadExcept ---------------------------------
+-- | Alternative way to liftIO and try, to catch specific exception type and utilize the MonadExcept instance
+--
+-- @since 0.2.2.0
+tryAndThrowWith :: forall e e' m a. (MonadIO m, E.Exception e, MonadExcept e' m) => (e -> e') -> IO a -> m a
+tryAndThrowWith using = either (throwExcept . using) return <=< liftIO . E.try @e
+
+-- | Similar to tryAndThrowWith, uses id
+--
+-- @since 0.2.2.0
+tryAndThrow :: forall e m a. (MonadIO m, E.Exception e, MonadExcept e m) => IO a -> m a
+tryAndThrow = tryAndThrowWith @e id
+
+-- | Directly show the exception and throw it as ErrorText. Use two type applications to specify the error types.
+--
+-- @
+-- tryAndThrowText @IOException @"FileNotFound" $ readFile' "file.txt"
+-- @
+--
+-- @since 0.2.2.0
+tryAndThrowText :: forall e symb m a. (MonadIO m, E.Exception e, MonadExcept (ErrorText symb) m) => IO a -> m a
+tryAndThrowText = tryAndThrowWith @e (errorText @symb . pack . show)
+
 -- | Transform the first error in the error list
 mapError :: Monad m => (e1 -> e2) -> EffT' c mods (e1 : es) m a -> EffT' c mods (e2 : es) m a
 mapError f eff = EffT' $ \rs ss -> do
@@ -925,6 +958,7 @@ effThrowEList es = EffT' $ \_ s -> pure (RFailure es, s)
 effThrowEListIn :: forall es es' c mods m a. (Monad m, NonEmptySubList es es') => EList es -> EffT' c mods es' m a
 effThrowEListIn es = EffT' $ \_ s -> pure (RFailure $ subListEListEmbed es, s)
 {-# INLINE effThrowEListIn #-}
+
 
 -- | Turn an Either return type into the error list with a function, adding the error type if it is not already in the error list.
 -- The inner monad type needs to be precise due to the way type inference works.
