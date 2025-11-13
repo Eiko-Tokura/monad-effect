@@ -33,6 +33,7 @@ module Control.Monad.Effect
   -- * Catching exceptions from base
   , effTry, effTryIn, effTryWith, effTryInWith
   , effTryIO, effTryIOIn, effTryIOWith, effTryIOInWith
+  , effTryUncaught
   , tryAndThrow, tryAndThrowWith, tryAndThrowText
 
   -- * Converting values to error
@@ -58,6 +59,7 @@ module Control.Monad.Effect
 
   -- * Bracket pattern
   , maskEffT, generalBracketEffT, bracketEffT, bracketOnErrorEffT
+  , generalBracketEffT', bracketEffT', bracketOnErrorEffT'
 
   -- * Looping
   , foreverEffT
@@ -330,8 +332,8 @@ maskEffT actionUsingUnmask = EffT' $ \rs ss -> Catch.mask $ \unmask ->
   unEffT' (actionUsingUnmask $ \(EffT' eff) -> EffT' $ \rs' ss' -> unmask (eff rs' ss')) rs ss
 {-# INLINE maskEffT #-}
 
--- | The generalized bracket pattern for EffT
--- exceptions outside the error list are not caught.
+-- | The generalized bracket pattern for EffT.
+-- Exceptions outside the error list are NOT caught.
 -- To deal with them, make them into the error list first (like using effTryIOWith).
 generalBracketEffT
   :: MonadMask m
@@ -346,7 +348,28 @@ generalBracketEffT acquire release action = maskEffT $ \unMaskEffT -> do
   release resource result
 {-# INLINABLE generalBracketEffT #-}
 
--- | A simpler version of `generalBracketEffT` where the release function does not depend on the result of the action and error types are the same.
+-- | The generalized bracket pattern for EffT.
+-- Exceptions outside the error list are also caught, you can rethrow them in the release function.
+--
+-- @since 0.2.2.0
+generalBracketEffT'
+  :: (MonadMask m, MonadCatch m, uncaught ~ ErrorValue "uncaught" SomeException)
+  => HasCallStack
+  => EffT' c mods es m a                        -- ^ acquire resource
+  -> (a -> Either uncaught (Result es' b) -> EffT' c mods es m o) -- ^ release resource, and return the result
+  -> (a -> EffT' c mods es' m b)                -- ^ action using the resource
+  -> EffT' c mods es m o
+generalBracketEffT' acquire release action = maskEffT $ \unMaskEffT -> do
+  resource <- acquire
+  result <- errorToEither $ effTryUncaught $ embedNoError $ unMaskEffT (errorToResult $ action resource)
+  release resource result
+{-# INLINABLE generalBracketEffT' #-}
+
+-- | A simpler version of `generalBracketEffT` where the release function does not depend on the result
+-- of the action and error types are the same.
+--
+-- The release function is run if the use action returns or fails with algebraic exceptions.
+-- Exceptions outside the error list are NOT caught.
 bracketEffT :: (MonadMask m, HasCallStack)
   => EffT' c mods es m a         -- ^ acquire resource
   -> (a -> EffT' c mods es m ()) -- ^ release resource only
@@ -360,7 +383,30 @@ bracketEffT acquire release = generalBracketEffT
   )
 {-# INLINABLE bracketEffT #-}
 
--- | Like bracketEffT, but the release function is only called when the inner computation fails with exception (algebraic). If the use action normally returns (RSuccess), then the release action is not ran.
+-- | Like bracketEffT, but exceptions outside the error list are also caught and rethrown (SomeException),
+-- ensuring the release action is always run.
+--
+-- @since 0.2.2.0
+bracketEffT'
+  :: ( MonadMask m
+     , MonadCatch m
+     , HasCallStack
+     , MonadExcept SomeException m
+     )
+  => EffT' c mods es m a         -- ^ acquire resource
+  -> (a -> EffT' c mods es m ())  -- ^ release resource only
+  -> (a -> EffT' c mods es m b) -- ^ action using the resource
+  -> EffT' c mods es m b
+bracketEffT' acquire release = generalBracketEffT'
+  acquire
+  (\a result -> case result of
+      Right (RSuccess b) -> release a >> return b
+      Right (RFailure e) -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
+      Left (ErrorValue uncaught) -> release a >> lift (throwExcept uncaught)
+  )
+{-# INLINABLE bracketEffT' #-}
+
+-- | Like bracketEffT, but the release function is only called when the inner computation fails with algebraic exception. If the use action normally returns (RSuccess), then the release action is not run.
 --
 -- @since 0.2.2.0
 bracketOnErrorEffT :: (MonadMask m, HasCallStack)
@@ -375,6 +421,29 @@ bracketOnErrorEffT acquire release = generalBracketEffT
       RFailure e -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
   )
 {-# INLINABLE bracketOnErrorEffT #-}
+
+-- | Like bracketOnErrorEffT, but exceptions outside the error list are also caught and rethrown (SomeException),
+-- ensuring the release action is always run.
+--
+-- @since 0.2.2.0
+bracketOnErrorEffT'
+  :: ( MonadMask m
+     , MonadCatch m
+     , HasCallStack
+     , MonadExcept SomeException m
+     )
+  => EffT' c mods es m t
+  -> (t -> EffT' c mods es m a)
+  -> (t -> EffT' c mods es m o)
+  -> EffT' c mods es m o
+bracketOnErrorEffT' acquire release = generalBracketEffT'
+  acquire
+  (\a result -> case result of
+      Right (RSuccess b) -> return b
+      Right (RFailure e) -> release a >> EffT' (\_ ss -> return (RFailure e, ss))
+      Left (ErrorValue uncaught) -> release a >> lift (throwExcept uncaught)
+  )
+{-# INLINABLE bracketOnErrorEffT' #-}
 
 -- | The states on the separate thread will diverge, and will be discarded.
 -- when exception occurs, the thread quits
@@ -796,6 +865,11 @@ effTryIOInWith f eff = EffT' $ \rs ss -> do
     Left e                     -> return (RFailure $ embedE $ f e, ss)
     Right (eResult, stateMods) -> return (eResult, stateMods)
 {-# INLINE effTryIOInWith #-}
+
+-- | Can be useful for catching all exceptions in the base monad (those that are unhandled by your algebraic exception list).
+-- For example to be used at the outmost layer of the app, or inside bracket patterns.
+effTryUncaught :: MonadCatch m => EffT' c mods es m a -> EffT' c mods (ErrorValue "uncaught" SomeException : es) m a
+effTryUncaught = effTryWith @SomeException (errorValue @"uncaught")
 
 -------------------------------------- try (IO) and throw using MonadExcept ---------------------------------
 -- | Alternative way to liftIO and try, to catch specific exception type and utilize the MonadExcept instance
