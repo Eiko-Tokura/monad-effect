@@ -412,8 +412,11 @@ forkEffTSafe = forkEffT
 
 -- | The states on the separate thread will diverge, and will be returned as an Async type.
 asyncEffT
-  :: forall c mods es m a. (MonadBaseControl IO m)
-  => EffT' c mods es m a -> EffT' c mods NoError m (Async (StM m (Result es a, SystemState c mods)))
+  :: forall c mods es m a result.
+      ( MonadBaseControl IO m
+      , result ~ StM m (Result es a, SystemState c mods)
+      )
+  => EffT' c mods es m a -> EffT' c mods NoError m (Async result)
 asyncEffT eff = EffT' $ \rs ss -> do
   asyncEff <- liftBaseWith $ \runInBase -> async (runInBase $ unEffT' eff rs ss)
   return (RSuccess asyncEff, ss)
