@@ -14,7 +14,8 @@ import Data.Kind
 import Data.TypeList
 import Data.Bifunctor (second)
 import GHC.TypeLits
-import qualified Control.Monad.State as S
+import qualified Control.Monad.State  as S
+import qualified Control.Monad.Reader as R
 
 import Control.System
 
@@ -70,6 +71,50 @@ instance Loadable c (SModule s) mods ies where
   withModule (SInitData s) = runEffTOuter_ SRead (SState s)
   {-# INLINE withModule #-}
 instance EventLoop c (SModule s) mods es
+
+liftReaderT :: forall r mods errs m c a. (Monad m, In' c (RModule r) mods) => R.ReaderT r m a -> EffT' c mods errs m a
+liftReaderT rAction = do
+  RRead r <- askModule @(RModule r)
+  lift $ R.runReaderT rAction r
+{-# INLINE liftReaderT #-}
+
+embedReaderT :: forall r mods errs m c a. (Monad m, In' c (RModule r) mods) => R.ReaderT r (EffT' c mods errs m) a -> EffT' c mods errs m a
+embedReaderT action = do
+  RRead r <- askModule @(RModule r)
+  embedEffT $ R.runReaderT action r
+{-# INLINE embedReaderT #-}
+
+addReaderT :: forall r mods errs m c a.
+  ( SubList c mods (RModule r : mods)
+  , RModule r `NotIn` mods
+  , In' c (RModule r) (RModule r : mods)
+  , Monad m
+  )
+  => R.ReaderT r (EffT' c mods errs m) a -> EffT' c (RModule r : mods) errs m a
+addReaderT action = do
+  RRead r <- askModule @(RModule r)
+  embedEffT $ R.runReaderT action r
+{-# INLINE addReaderT #-}
+
+asReaderT :: forall r mods errs m c a.
+  ( In' c (RModule r) mods
+  , RModule r `UniqueIn` mods
+  , SubList c (Remove (FirstIndex (RModule r) mods) mods) mods
+  , Monad m
+  )
+  => R.ReaderT r (EffT' c (Remove (FirstIndex (RModule r) mods) mods) errs m) a -> EffT' c mods errs m a
+asReaderT action = do
+  RRead r <- askModule
+  embedEffT $ R.runReaderT action r
+{-# INLINE asReaderT #-}
+
+liftStateT :: forall s mods errs m c a. (Monad m, In' c (SModule s) mods) => S.StateT s m a -> EffT' c mods errs m a
+liftStateT sAction = do
+  SState s <- getModule @(SModule s)
+  (a, s') <- lift $ S.runStateT sAction s
+  putModule @(SModule s) (SState s')
+  return a
+{-# INLINE liftStateT #-}
 
 embedStateT :: forall s mods errs m c a. (Monad m, In' c (SModule s) mods) => S.StateT s (EffT' c mods errs m) a -> EffT' c mods errs m a
 embedStateT action = do
