@@ -9,6 +9,7 @@ module Control.Monad.Effect
   ( -- * Effectful computation
     EffT', Eff, Pure, EffT, EffL, PureL, EffLT
   , IO', IO'L
+  , ResultT
   , ErrorText(..), errorText, ErrorValue(..), errorValue, MonadThrowError(..)
   , MonadFailError(..)
 
@@ -19,7 +20,8 @@ module Control.Monad.Effect
   , embedEffT, embedMods, embedError
 
   -- * Running EffT
-  , runEffT, runEffT_, runEffT0, runEffT01, runEffT00
+  , runEffT, runEffT_, runEffT0, runResultT
+  , runEffT01, runEffT00
   , runEffTNoError
   , runEffTOuter, runEffTOuter', runEffTOuter_
   , runEffTIn, runEffTIn', runEffTIn_
@@ -116,14 +118,12 @@ import Data.Bifunctor
 import Data.Functor.Identity
 import Data.Kind
 import Data.Proxy
-import Data.String (IsString)
-import Data.Text (Text, unpack, pack)
+import Data.Text (Text, pack)
 import Data.Typeable
 import Data.TypeList
 import Data.TypeList.ConsFData.Pattern
 import Data.TypeList.FData
 import GHC.TypeError
-import GHC.TypeLits
 import GHC.Stack (HasCallStack)
 
 -- | EffTectful computation, using modules as units of effect
@@ -139,7 +139,11 @@ type EffT  mods es  = EffT' FData mods es
 type Pure  mods es  = EffT' FData mods es Identity
 type In    mods es  = In'   FData mods es
 -- | Error list enhanced IO
-type IO'   es       = EffT' FData '[]  es IO
+type IO'   es       = EffT' FData '[] es IO
+-- | A uniform replacement for ExceptT
+--
+-- @ since 0.2.2.0
+type ResultT es m = EffT' FData '[] es m
 
 -- | Short hand monads which uses FList instead of FData as the data structure
 type EffL  mods es = EffT' FList mods es IO
@@ -158,48 +162,6 @@ type family MonadNoError m :: Constraint where
 checkNoError :: MonadNoError m => m a -> m a
 checkNoError = id
 {-# INLINE checkNoError #-}
-
--- | a newtype wrapper ErrorText that wraps a Text with a name (for example Symbol type)
--- useful for creating ad-hoc error type
---
--- @
--- ErrorText @_ @"FileNotFound" "information : file not found"
--- @
-newtype ErrorText (s :: k) = ErrorText Text
-  deriving newtype (IsString)
-
--- | Can be used to construct an ErrorText value, use type application to give the name
---
--- @
--- errorText @"FileNotFound" "file not found"
--- @
-errorText :: forall s. Text -> ErrorText s
-errorText = ErrorText
-{-# INLINE errorText #-}
-
--- | a newtype wrapper ErrorValue that wraps a custom value type v with a name (for example Symbol type)
--- useful for creating ad-hoc error type
-newtype ErrorValue (a :: k) (v :: Type) = ErrorValue v
-
--- | Can be used to construct an ErrorValue value, use type application to give the name
-errorValue :: forall s v. v -> ErrorValue s v
-errorValue = ErrorValue
-{-# INLINE errorValue #-}
-
--- | A wrapper dedicated for errors living in MonadThrow and MonadCatch
-newtype MonadThrowError = MonadThrowError SomeException
-  deriving Show
-
-instance KnownSymbol s => Show (ErrorText s) where
-  show (ErrorText t) = "ErrorText of type " ++ symbolVal (Proxy @s) ++ ": " ++ unpack t
-
-instance (KnownSymbol s, Show v) => Show (ErrorValue s v) where
-  show (ErrorValue v) = "ErrorValue of type " <> symbolVal (Proxy @s) <> ": " <> show v
-
--- | @since 0.2.2.0
-instance KnownSymbol s                       => Exception (ErrorText s)
--- | @since 0.2.2.0
-instance (KnownSymbol s, Typeable v, Show v) => Exception (ErrorValue s v)
 
 instance Functor m => Functor (EffT' c mods es m) where
   fmap f (EffT' eff) = EffT' $ \rs ss -> first (fmap f) <$> eff rs ss
@@ -643,6 +605,12 @@ runEffTNoError rs ss = fmap (first resultNoError) . runEffT rs ss
 runEffT0 :: (Monad m, ConsFNil c) => EffT' c '[] es m a -> m (Result es a)
 runEffT0 = fmap fst . runEffT fNil fNil
 {-# INLINE runEffT0 #-}
+
+-- | Synonym for runEffT0 for ResultT
+--
+-- @since 0.2.2.0
+runResultT :: Monad m => ResultT es m a -> m (Result es a)
+runResultT = runEffT0
 
 -- | runs the EffT' with no modules and a single possible error type, return as classic Either type
 runEffT01 :: (Monad m, ConsFNil c) => EffT' c '[] '[e] m a -> m (Either e a)
