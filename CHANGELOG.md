@@ -11,3 +11,13 @@
 ## 0.2.1.0 -- 2025-11-05
 
 * Exporting `lift`
+
+## 0.2.2.0 -- 2025-12-02
+
+* Adding `ResultT` synonym, `MonadExcept` class
+
+* Adding `ReaderT` and `StateT` helpers
+
+* Adding `withAsyncEffT'` helper, generalized certain type signatures
+
+* Adding Exception instances and `tryAndThrow` IO utilities
