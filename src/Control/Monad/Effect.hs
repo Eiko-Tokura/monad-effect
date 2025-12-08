@@ -27,6 +27,10 @@ module Control.Monad.Effect
   , runEffTIn, runEffTIn', runEffTIn_
   , replaceEffTIn
 
+  -- * Type-application helpers
+  , applyErrors
+  , applyMods
+
   -- * Catching and throwing algebraic exceptions
   , effCatch, effCatchAll, effCatchSystem
   , effCatchIn, effCatchIn'
@@ -279,6 +283,24 @@ foreverEffT eff = do
   _ <- eff
   foreverEffT eff
 {-# INLINE foreverEffT #-}
+---------------------------------------------------------
+-- Type Application Helpers
+--
+-- | A helper function that is basically identity, but the first type argument
+-- exposes the error list parameter 'es'.
+--
+-- @since 0.2.3.0
+applyErrors :: forall es c mods m a. EffT' c mods es m a -> EffT' c mods es m a
+applyErrors = id
+{-# INLINE applyErrors #-}
+
+-- | A helper function that is basically identity, but the first type argument
+-- exposes the module list parameter 'mods.
+--
+-- @since 0.2.3.0
+applyMods :: forall mods c es m a. EffT' c mods es m a -> EffT' c mods es m a
+applyMods = id
+{-# INLINE applyMods #-}
 ---------------------------------------------------------
 -- bracket patterns
 --
