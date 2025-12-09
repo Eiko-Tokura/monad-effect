@@ -992,9 +992,13 @@ noCounter SampleCounter           = pure (CounterSample 0)
 Compared to earlier versions of the README:
 
 - The formal definition of `Result` has been updated to match the code in `Data.Result` (single `RSuccess` constructor, with `Result '[] a` behaving like `a`).
-- All examples now use the `errorText` / `errorValue` smart constructors instead of directly pattern‑matching on `ErrorText` / `ErrorValue`. This reflects the current kind of the first type parameter and avoids `ErrorText @_ @"..."` noise.
+
+- All examples now use the `errorText` / `errorValue` smart constructors instead of directly constructing using constructors `ErrorText` / `ErrorValue`. This avoids the filling kind type parameter `ErrorText @_ @"..."` noise.
+
 - The `myLookup` / `computeAverageFromFile` example has been synchronised with the code in `test/Examples.hs` and corrected to use `errorText @"Map.keyNotFound"` with a proper `Text` value.
+
 - Experimental system orchestration types (`WithSystem`, `EventLoopSystem`, event loops) and the `Resource` module are intentionally **not** described in detail here, as they may change or be removed in future versions. The focus is on `EffT`, modules, algebraic errors, and the RS/Except helper classes.
+
 - Minor wording updates were made throughout to reflect that `EffT`/`Eff` (with `FData`) are the recommended entry points for most users.
 
 For full API details, please refer to the Haddock documentation generated from the source.
