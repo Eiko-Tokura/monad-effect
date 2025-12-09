@@ -1,4 +1,4 @@
-# monad-effect – a lightweight, fast, algebraic effect system
+# monad-effect - a lightweight, fast, algebraic effect system
 
 This project is still in experimental beta and may evolve quickly. Feedback and contributions are very welcome.
 
@@ -49,13 +49,13 @@ Typical use-cases:
 
 In classic Haskell (and in other languages like Rust), exceptions are often encoded algebraically as `Maybe` or `Either`:
 
-- `Maybe a` is composable but not very informative – you lose any structured information about *why* something failed.
+- `Maybe a` is composable but not very informative - you lose any structured information about *why* something failed.
 - `Either e a` carries an error payload, but composing multiple distinct `Either e_i a` values across a codebase tends to either:
   - collapse everything to a common super-type like `Text`/`SomeException` (and then you lose the ability to catch specific errors in a principled way, and loses the ability to declare that some of them won't happen); or
   - nest `Either e0 (Either e1 (Either e2 a))`, which is unergonomic.
 - `ExceptT e m a` has the same compositional issues, *and* the transformer order matters:
-  - `StateT s (ExceptT e m) a ~ s -> m (Either e (a, s))` – once an exception is thrown, both `a` and the intermediate state are lost / rolled-back.
-  - `ExceptT e (StateT s m) a ~ s -> m (Either e a, s)` – the state up to the exception point is preserved, which is often what you actually want.
+  - `StateT s (ExceptT e m) a ~ s -> m (Either e (a, s))` - once an exception is thrown, both `a` and the intermediate state are lost / rolled-back.
+  - `ExceptT e (StateT s m) a ~ s -> m (Either e a, s)` - the state up to the exception point is preserved, which is often what you actually want.
 
 `monad-effect` addresses these issues by:
 
@@ -80,8 +80,8 @@ Instead of reaching for `IORef` / `TVar` for every bit of mutable state, you can
 
 In particular the library provides two built-in modules:
 
-- `SModule s` – a module holding a pure state of type `s`;
-- `RModule r` – a module holding a read-only value of type `r`.
+- `SModule s` - a module holding a pure state of type `s`;
+- `RModule r` - a module holding a read-only value of type `r`.
 
 These integrate with the `MonadStateful` / `MonadReadable` classes and provide the familiar `getS` / `putS` / `modifyS` / `askR` / `localR` APIs, while still participating in the larger module stack.
 
@@ -180,10 +180,10 @@ type IO'      es    = EffT' FData '[] es IO
 
 Intuitively:
 
-- `mods :: [Type]` – type-level list of **modules** (effects);
-- `es   :: [Type]` – type-level list of **error types** that this computation may throw;
-- `m` – the **base monad**; and
-- `c` – the container type (`FData` by default) used to hold the module environments and states.
+- `mods :: [Type]` - type-level list of **modules** (effects);
+- `es   :: [Type]` - type-level list of **error types** that this computation may throw;
+- `m` - the **base monad**; and
+- `c` - the container type (`FData` by default) used to hold the module environments and states.
 
 The library provides runners such as:
 
@@ -225,7 +225,7 @@ There are much more runners and combinators, see actual haddock documentation.
 type ResultT es m = EffT '[] es m
 ```
 
-### Result and EList – algebraic error lists
+### Result and EList - algebraic error lists
 
 Errors are represented by the `Result` and `EList` types:
 
@@ -250,7 +250,7 @@ Important facts:
 - When `es ~ '[]`, `Result '[] a` is *effectively just `a`* (`resultNoError` witnesses this).
 - `EList es` is a **non-empty** sum type: you cannot construct an `EList '[]`, so a `RFailure` always carries *one of the listed error types*.
 
-### Named error types – ErrorText, ErrorValue, MonadExcept
+### Named error types - ErrorText, ErrorValue, MonadExcept
 
 To avoid defining a new ADT for every small error case, the library provides ad-hoc, named error wrappers:
 
@@ -390,7 +390,7 @@ runSModule_  :: (ConsFDataList c (SModule s : mods), Monad m)
              -> EffT' c mods errs m a
 ```
 
-### RS.Class – `MonadReadOnly`, `MonadReadable`, `MonadStateful`
+### RS.Class - `MonadReadOnly`, `MonadReadable`, `MonadStateful`
 
 `Control.Monad.RS.Class` defines type-class interfaces similar to `MonadReader`/`MonadState`, but *without* functional dependencies, so a single monad can have many readable and stateful values:
 
@@ -724,29 +724,29 @@ This section is **not** exhaustive. It highlights key exports; for full details,
 
 - `Eff mods es a`, `EffT mods es m a`, `Pure mods es a`, `ResultT es m a`, `IO' es m a`
 - `runEffT`, `runEffT_`, `runEffT0`, `runEffT00`, `runEffT01`, `runResultT`
-- `runEffTOuter`, `runEffTOuter'`, `runEffTOuter_` – eliminate the *outermost* module while supplying its `ModuleRead`/`ModuleState`
-- `runEffTIn`, `runEffTIn'`, `runEffTIn_` – eliminate an *inner* module identified by its type
-- `replaceEffTIn` – replace a module with another, using custom conversion functions
+- `runEffTOuter`, `runEffTOuter'`, `runEffTOuter_` - eliminate the *outermost* module while supplying its `ModuleRead`/`ModuleState`
+- `runEffTIn`, `runEffTIn'`, `runEffTIn_` - eliminate an *inner* module identified by its type
+- `replaceEffTIn` - replace a module with another, using custom conversion functions
 - `NoError`, `checkNoError`, `declareNoError`, `embedNoError`
-- `applyErrors`, `applyMods` – helpers that expose `es` / `mods` to type applications without changing the value
+- `applyErrors`, `applyMods` - helpers that expose `es` / `mods` to type applications without changing the value
 
 ### Error machinery
 
 - Types: `Result es a`, `EList es`, `SystemError`
 - Named wrappers: `ErrorText s`, `ErrorValue s v`, `errorText`, `errorValue`
 - Throwing:
-  - `effThrowIn`, `effThrow` – throw an error that is already in the list
-  - `effThrowEList`, `effThrowEListIn` – throw multiple errors via `EList`
+  - `effThrowIn`, `effThrow` - throw an error that is already in the list
+  - `effThrowEList`, `effThrowEListIn` - throw multiple errors via `EList`
   - `MonadExcept e m` integration (e.g. via `tryAndThrow`, `tryAndThrowText`)
 - Catching:
-  - `effCatch` – catch the *first* error in the list
-  - `effCatchIn` – catch a *specific* error type and remove it from the list
-  - `effCatchAll` – catch all algebraic errors as an `EList es`
-  - `effCatchSystem` – catch `SystemError`
+  - `effCatch` - catch the *first* error in the list
+  - `effCatchIn` - catch a *specific* error type and remove it from the list
+  - `effCatchAll` - catch all algebraic errors as an `EList es`
+  - `effCatchSystem` - catch `SystemError`
 - Converting errors:
   - `errorToEither`, `errorToEitherAll`, `eitherAllToEffect`
   - `errorInToEither`, `errorToMaybe`, `errorInToMaybe`, `errorToResult`
-  - `mapError` – map one error list into another
+  - `mapError` - map one error list into another
 - Turning `Either` / `Maybe` into errors:
   - `effEitherWith`, `effEither`
   - `effEitherInWith`, `effEitherIn`, `effEitherSystemException`
@@ -766,17 +766,17 @@ These functions help you bridge `IO` exceptions into algebraic errors:
 
 Try/catch style:
 
-- `effTry`, `effTryWith` – catch exceptions thrown in the *base monad* and turn them into algebraic errors
+- `effTry`, `effTryWith` - catch exceptions thrown in the *base monad* and turn them into algebraic errors
 - `effTryIO`, `effTryIOWith`, `effTryIOIn`, `effTryIOInWith`
-- `effTryUncaught` – catch uncaught exceptions into error lists
-- `tryAndThrow`, `tryAndThrowWith`, `tryAndThrowText` – lift `IO` and rethrow via `MonadExcept`
+- `effTryUncaught` - catch uncaught exceptions into error lists
+- `tryAndThrow`, `tryAndThrowWith`, `tryAndThrowText` - lift `IO` and rethrow via `MonadExcept`
 
 ### Modules and module helpers
 
 - Core type classes:
-  - `Module` – defines `ModuleRead` and `ModuleState` associated data families
-  - `SystemModule` – extends `Module` with `ModuleEvent` and `ModuleInitData`
-  - `Loadable c mod mods es` – provides `withModule` for scoped module initialisation
+  - `Module` - defines `ModuleRead` and `ModuleState` associated data families
+  - `SystemModule` - extends `Module` with `ModuleEvent` and `ModuleInitData`
+  - `Loadable c mod mods es` - provides `withModule` for scoped module initialisation
 - System-wide aliases:
   - `SystemRead c mods`, `SystemState c mods`
   - `SystemEvent mods`, `SystemInitData c mods`
@@ -791,17 +791,17 @@ Try/catch style:
 
 Resource-safe patterns:
 
-- `maskEffT` – `mask` in the base monad while staying in `EffT'`
+- `maskEffT` - `mask` in the base monad while staying in `EffT'`
 - `generalBracketEffT`, `generalBracketEffT'`
 - `bracketEffT`, `bracketEffT'`
 - `bracketOnErrorEffT`, `bracketOnErrorEffT'`
 
 Concurrency:
 
-- `forkEffT` – fork an `EffT` computation onto a new thread
-- `forkEffTFinally` – variants with finalisers
-- `asyncEffT`, `withAsyncEffT`, `withAsyncEffT'` – integrate `async` with `EffT`
-- `restoreAsync`, `restoreAsync_` – restore an `EffT` computation from an `Async` result
+- `forkEffT` - fork an `EffT` computation onto a new thread
+- `forkEffTFinally` - variants with finalisers
+- `asyncEffT`, `withAsyncEffT`, `withAsyncEffT'` - integrate `async` with `EffT`
+- `restoreAsync`, `restoreAsync_` - restore an `EffT` computation from an `Async` result
 
 ### RS modules and interfaces
 
@@ -819,15 +819,15 @@ From `Module.RS`:
 - Convenience:
   - `askR`, `asksR`, `localR`
   - `getS`, `getsS`, `putS`, `modifyS`
-  - `readOnly` – treat a state module as a read-only module inside a scope
+  - `readOnly` - treat a state module as a read-only module inside a scope
 
 From `Control.Monad.RS.Class`:
 
-- `MonadReadOnly r m`, `MonadReadable r m`, `MonadStateful s m` – reader/state-like APIs without functional dependencies; `EffT'` has instances for these.
+- `MonadReadOnly r m`, `MonadReadable r m`, `MonadStateful s m` - reader/state-like APIs without functional dependencies; `EffT'` has instances for these.
 
 From `Control.Monad.Class.Except`:
 
-- `MonadExcept e m` – multiple error types per monad
+- `MonadExcept e m` - multiple error types per monad
 - `ErrorText`, `ErrorValue`, `errorText`, `errorValue`
 
 ### Template Haskell utilities
