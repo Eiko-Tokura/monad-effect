@@ -23,8 +23,8 @@ Most users will work with the `Eff` / `EffT` type aliases and the built-in reade
   - [Result and EList - algebraic error lists](#result-and-elist---algebraic-error-lists)
   - [Named error types - ErrorText, ErrorValue, MonadExcept](#named-error-types---errortext-errorvalue-monadexcept)
   - [Modules and the system view](#modules-and-the-system-view)
-  - [Built-in Reader/State modules: RModule and SModule](#built-in-readerstate-modules-rmodule-and-smodule)
-  - [RS.Class - `MonadReadOnly`, `MonadReadable`, `MonadStateful`](#rsclass--monadreadonly-monadreadable-monadstateful)
+  - [Built-in Reader and State modules - RModule and SModule](#built-in-reader-and-state-modules---rmodule-and-smodule)
+  - [RS.Class - `MonadReadOnly`, `MonadReadable`, `MonadStateful`](#rsclass---monadreadonly-monadreadable-monadstateful)
 - [Getting Started - Examples](#getting-started---examples)
   - [Quick start - algebraic state and errors](#quick-start---algebraic-state-and-errors)
   - [Embedding and reshaping effects](#embedding-and-reshaping-effects)
@@ -359,7 +359,7 @@ modifyModule :: (Monad m, In' c mod mods, Module mod)
 
 The `SystemModule`/`ModuleEvent`/`ModuleInitData` pieces are primarily used by higher-level orchestration helpers (e.g. scoped initialisation via `withModule`).
 
-### Built-in Reader/State modules - RModule and SModule
+### Built-in Reader and State modules - RModule and SModule
 
 The `Module.RS` module gives you ready-made reader/state modules and helpers to integrate existing `ReaderT`/`StateT` code.
 
@@ -606,7 +606,7 @@ runApp app = do
           app
 ```
 
-The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is project-specific, but the pattern is always:
+The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is either project-specific / reusable components you can build between projects, but the pattern is always:
 
 > build an `EffT` stack of modules, run your application logic there, then eliminate modules and errors with the provided runners.
 
