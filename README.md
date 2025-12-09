@@ -877,7 +877,7 @@ The benchmarks in `benchmark/` compare:
 
 On typical countdown/state benchmarks:
 
-- `EffT` + `FData` is around **25× faster** than `StateT` without optimisation, and
+- `EffT` + `FData` is around **25 times faster** than `StateT` without optimisation, and
 - about as fast as a properly optimised `StateT` (`-O2 -flate-dmd-anal`).
 
 See the SVG charts under `benchmark/bench-result-*` in the repository for details.
