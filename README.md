@@ -630,13 +630,14 @@ runBot bot meow = do
 
   -- Build additional configuration/state modules...
   -- initialise counters, status, etc.
+  -- not relevant for this example.
 
-  embedNoError               -- drop errors once handled
+  embedNoError -- requires the scope inside to have 'NoError' and embeds it to a larger error context
     $ effAddLogCat' (LogCat botModule.botId) -- adds a logging category to logs within the scope
     $ ( case botRunFlag bot of
           RunClient addr port -> void . withClientConnection addr port
           RunServer addr port ->        withServerConnection addr port
-      ) -- connection module
+      ) -- running connection
     $ (\app -> do
         AllData wc bc od <- embedEffT $ initAllData botconfig
         runSModule_ od $ runSModule_ wc $ runSModule_ bc $ app
