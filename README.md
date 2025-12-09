@@ -74,9 +74,11 @@ means that module state is preserved when an algebraic exception is thrown (like
 
 You can throw algebraic errors into the list (`effThrowIn` / `effThrow`), catch all errors (`effCatchAll`), or catch and *remove* a specific error type (`effCatchIn`) so that the remaining computation provably no longer produces that error.
 
-### Purity via modules
+### Purity
 
-Instead of reaching for `IORef` / `TVar` for every bit of mutable state, you can keep many states *pure* and model them as modules:
+Instead of reaching for `IORef` / `TVar` for every bit of mutable state, you can also choose to keep states *pure* and model them as part of your self-defined modules. It's a design choice you can make : some effect systems force you into `IO`. While for concurrency programs you need `TVar`s, but we should have the ability to choose pure state where appropriate because we love purity.
+
+In particular the library provides two built‑in modules:
 
 - `SModule s` – a module holding a pure state of type `s`;
 - `RModule r` – a module holding a read‑only value of type `r`.
@@ -87,8 +89,25 @@ Using modules, you can:
 
 - keep configuration, pure in‑memory state, handles, and effect interpreters in a single typed module stack; and
 - run the same code in `Identity` for pure tests, or in `IO` for production, by choosing appropriate runners.
+- Use it to run stateful tight computations without `IO` overhead (which GHC can optimize very well).
 
-Template Haskell helpers in `Module.RS.QQ` (`makeRModule`, `makeRSModule`) make it easy to generate simple reader/state modules with minimal boilerplate.
+Template Haskell helpers in `Module.RS.QQ` (`makeRModule`, `makeRSModule`) make it easy to generate simple reader/state modules with minimal boilerplate. However, right now you are expected to write a lot of modules by hand as they are much more flexible.
+
+Besides tight calculation that benefits from pure states, here is another example function that benefits from pure state: the function can be ran as a pure function with pure logging effect (writer / no-logging), or in IO whose logging prints to console/file.
+
+```haskell
+eventHandler
+  :: (Monad pureMonad)
+  => InputEvent
+  -> EffT
+      [ Logging pureMonad LogData -- ^ We will use logging to generate diagnostics
+      , EventState                -- ^ We need to read and update the state
+      ]
+      [ ErrorText "not-allowed"
+      ]
+      pureMonad
+      [OutputCommands]      -- ^ Output commands from the event module
+```
 
 ### Flexible and modular
 
