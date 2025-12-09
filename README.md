@@ -100,10 +100,10 @@ eventHandler
   :: (Monad pureMonad)
   => InputEvent
   -> EffT
-      [ Logging pureMonad LogData -- ^ We will use logging to generate diagnostics
+      '[ Logging pureMonad LogData -- ^ We will use logging to generate diagnostics
       , EventState                -- ^ We need to read and update the state
       ]
-      [ ErrorText "not-allowed"
+      '[ ErrorText "not-allowed"
       ]
       pureMonad
       [OutputCommands]      -- ^ Output commands from the event module
