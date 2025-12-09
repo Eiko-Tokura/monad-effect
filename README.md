@@ -906,7 +906,7 @@ See the `benchmark` folder for more benchmarks. The benchmarks are copied from `
 
 ### Flags
 
-GHC’s type-checker sometimes needs more fuel for large module/error lists. It is recommended to build with:
+GHC's type-checker sometimes needs more fuel for large module/error lists. It is recommended to build with:
 
 ```bash
 -fconstraint-solver-iterations=16
