@@ -4,12 +4,12 @@ This project is still in experimental beta and may evolve quickly. Feedback and 
 
 `monad-effect` gives you:
 
-- a single, optimisation‑friendly monad transformer `EffT` that combines **Reader, State and algebraic errors**;
+- a single, optimisation-friendly monad transformer `EffT` that combines **Reader, State and algebraic errors**;
 - **modules** as the unit of effect (e.g. reader, state, logging, database, HTTP, metrics);
 - **explicit, composable error lists** instead of using `Text` / `SomeException` ; and
 - performant effect stacks, without sacrificing purity.
 
-Most users will work with the `Eff` / `EffT` type aliases and the built‑in reader/state modules (`RModule`, `SModule`) and define their own modules around them.
+Most users will work with the `Eff` / `EffT` type aliases and the built-in reader/state modules (`RModule`, `SModule`) and define their own modules around them.
 
 ---
 
@@ -26,7 +26,7 @@ as:
 
 - **one layer of `Reader`** over a *heterogeneous* environment `SystemRead mods`,
 - **one layer of `State`** over a *heterogeneous* state `SystemState mods`, and
-- a **typed, algebraic error channel** `Result es a`, where `es :: [Type]` is a *type‑level list* of error types.
+- a **typed, algebraic error channel** `Result es a`, where `es :: [Type]` is a *type-level list* of error types.
 
 You explicitly say:
 
@@ -34,10 +34,10 @@ You explicitly say:
 - which **errors** (`es`) it can throw (e.g. `IOException`, `ErrorText "http"`, `MyDomainError`); and
 - you get back both a **result** and the **final module state**.
 
-Typical use‑cases:
+Typical use-cases:
 
-- replace `ReaderT r (StateT s (ExceptT e IO))` by a single `EffT` with a small list of modules and error types;
-- easily **add or remove error types** (`effCatch`, `effCatchIn`, `errorToEitherAll`, …);
+- replace one or more layers of `ReaderT`, `StateT`, `ExceptT` or even more equivalent ones, by a single `EffT` with a small list of modules and error types;
+- easily **add or remove error types** (`effCatch`, `effCatchIn`, `errorToEitherAll`, ... );
 - run the same effect in **pure monads** (e.g. `Identity`) and in `IO`; and
 - pass around **large module stacks** in real applications while keeping the types informative and composable.
 
@@ -50,16 +50,16 @@ Typical use‑cases:
 In classic Haskell (and in other languages like Rust), exceptions are often encoded algebraically as `Maybe` or `Either`:
 
 - `Maybe a` is composable but not very informative – you lose any structured information about *why* something failed.
-- `Either e a` carries an error payload, but composing multiple distinct `Either eᵢ a` values across a codebase tends to either:
-  - collapse everything to a common super‑type like `Text`/`SomeException` (and then you lose the ability to catch specific errors in a principled way); or
+- `Either e a` carries an error payload, but composing multiple distinct `Either e_i a` values across a codebase tends to either:
+  - collapse everything to a common super-type like `Text`/`SomeException` (and then you lose the ability to catch specific errors in a principled way, and loses the ability to declare that some of them won't happen); or
   - nest `Either e0 (Either e1 (Either e2 a))`, which is unergonomic.
 - `ExceptT e m a` has the same compositional issues, *and* the transformer order matters:
-  - `StateT s (ExceptT e m) a ~ s -> m (Either e (a, s))` – once an exception is thrown, both `a` and the intermediate state are lost.
+  - `StateT s (ExceptT e m) a ~ s -> m (Either e (a, s))` – once an exception is thrown, both `a` and the intermediate state are lost / rolled-back.
   - `ExceptT e (StateT s m) a ~ s -> m (Either e a, s)` – the state up to the exception point is preserved, which is often what you actually want.
 
 `monad-effect` addresses these issues by:
 
-- using a **type‑level list of error types** `es :: [Type]` and a non‑empty sum `EList es` to track exactly which error types can occur; and
+- using a **type-level list of error types** `es :: [Type]` and a non-empty sum `EList es` to track exactly which error types can occur; and
 - using `Result es a` as the algebraic error carrier (see the formal definition below), which behaves like `Either (EList es) a` and collapses to `a` when `es ~ '[]`.
 
 The underlying representation
@@ -78,16 +78,16 @@ You can throw algebraic errors into the list (`effThrowIn` / `effThrow`), catch 
 
 Instead of reaching for `IORef` / `TVar` for every bit of mutable state, you can also choose to keep states *pure* and model them as part of your self-defined modules. It's a design choice you can make : some effect systems force you into `IO`. While for concurrency programs you need `TVar`s, but we should have the ability to choose pure state where appropriate because we love purity.
 
-In particular the library provides two built‑in modules:
+In particular the library provides two built-in modules:
 
 - `SModule s` – a module holding a pure state of type `s`;
-- `RModule r` – a module holding a read‑only value of type `r`.
+- `RModule r` – a module holding a read-only value of type `r`.
 
 These integrate with the `MonadStateful` / `MonadReadable` classes and provide the familiar `getS` / `putS` / `modifyS` / `askR` / `localR` APIs, while still participating in the larger module stack.
 
 Using modules, you can:
 
-- keep configuration, pure in‑memory state, handles, and effect interpreters in a single typed module stack; and
+- keep configuration, pure in-memory state, handles, and effect interpreters in a single typed module stack; and
 - run the same code in `Identity` for pure tests, or in `IO` for production, by choosing appropriate runners.
 - Use it to run stateful tight computations without `IO` overhead (which GHC can optimize very well).
 
@@ -141,7 +141,7 @@ You can:
 - **embed smaller effects inside larger ones**, changing only modules (`embedMods`), only errors (`embedError`), or both (`embedEffT`).
 - move fluidly between `EffT` and more conventional forms via runners and converters like `runEffT00`, `runEffT01`, `errorToEither`, `errorToEitherAll`, `errorToMaybe`, and the `effEither*` / `effMaybe*` family of helpers.
 
-The result is a small set of primitives that scale well to large applications with many modules such as database access, HTTP clients, metrics, logging, and domain‑specific state.
+The result is a small set of primitives that scale well to large applications with many modules such as database access, HTTP clients, metrics, logging, and domain-specific state.
 
 ---
 
@@ -173,15 +173,15 @@ type EffT  mods es  = EffT' FData mods es
 type Pure  mods es  = EffT' FData mods es Identity
 type In    mods es  = In'   FData mods es
 
--- Error‑enhanced IO and ExceptT‑like transformer
+-- Error-enhanced IO and ExceptT-like transformer
 type ResultT  es m  = EffT' FData '[] es m
 type IO'      es    = EffT' FData '[] es IO
 ```
 
 Intuitively:
 
-- `mods :: [Type]` – type‑level list of **modules** (effects);
-- `es   :: [Type]` – type‑level list of **error types** that this computation may throw;
+- `mods :: [Type]` – type-level list of **modules** (effects);
+- `es   :: [Type]` – type-level list of **error types** that this computation may throw;
 - `m` – the **base monad**; and
 - `c` – the container type (`FData` by default) used to hold the module environments and states.
 
@@ -230,12 +230,12 @@ type ResultT es m = EffT '[] es m
 Errors are represented by the `Result` and `EList` types:
 
 ```haskell
--- | Sum of types, non‑empty by construction.
+-- | Sum of types, non-empty by construction.
 data EList (ts :: [Type]) where
   EHead :: !t          -> EList (t : ts)
   ETail :: !(EList ts) -> EList (t : ts)
 
--- | Error‑aware result.
+-- | Error-aware result.
 data Result (es :: [Type]) (a :: Type) where
   RSuccess :: a         -> Result es a
   RFailure :: !(EList es) -> Result es a
@@ -248,11 +248,11 @@ Important facts:
 
 - `Result es a` behaves like `Either (EList es) a`.  
 - When `es ~ '[]`, `Result '[] a` is *effectively just `a`* (`resultNoError` witnesses this).
-- `EList es` is a **non‑empty** sum type: you cannot construct an `EList '[]`, so a `RFailure` always carries *one of the listed error types*.
+- `EList es` is a **non-empty** sum type: you cannot construct an `EList '[]`, so a `RFailure` always carries *one of the listed error types*.
 
 ### Named error types – ErrorText, ErrorValue, MonadExcept
 
-To avoid defining a new ADT for every small error case, the library provides ad‑hoc, named error wrappers:
+To avoid defining a new ADT for every small error case, the library provides ad-hoc, named error wrappers:
 
 ```haskell
 -- | A named textual error.
@@ -289,7 +289,7 @@ This makes it very convenient to use `ErrorText "http"`, `ErrorText "decode"` et
 
 Modules are the **unit of effect**. A module describes:
 
-- what read‑only data it exposes (`ModuleRead`); and
+- what read-only data it exposes (`ModuleRead`); and
 - what mutable state it keeps (`ModuleState`).
 
 ```haskell
@@ -302,7 +302,7 @@ class Module mod => SystemModule mod where
   data ModuleEvent    mod :: Type
   data ModuleInitData mod :: Type
 
--- System‑wide containers (usually backed by 'FData')
+-- System-wide containers (usually backed by 'FData')
 type SystemRead     c mods = c ModuleRead  mods
 type SystemState    c mods = c ModuleState mods
 type SystemEvent      mods = UList ModuleEvent    mods
@@ -335,11 +335,11 @@ modifyModule :: (Monad m, In' c mod mods, Module mod)
              -> EffT' c mods es m ()
 ```
 
-The `SystemModule`/`ModuleEvent`/`ModuleInitData` pieces are primarily used by higher‑level orchestration helpers (e.g. scoped initialisation via `withModule`).
+The `SystemModule`/`ModuleEvent`/`ModuleInitData` pieces are primarily used by higher-level orchestration helpers (e.g. scoped initialisation via `withModule`).
 
-### Built‑in Reader/State modules: RModule and SModule
+### Built-in Reader/State modules: RModule and SModule
 
-The `Module.RS` module gives you ready‑made reader/state modules and helpers to integrate existing `ReaderT`/`StateT` code.
+The `Module.RS` module gives you ready-made reader/state modules and helpers to integrate existing `ReaderT`/`StateT` code.
 
 ```haskell
 -- Reader module
@@ -361,13 +361,13 @@ instance Module (SModule s) where
 Convenience helpers:
 
 ```haskell
--- Reader‑like interface
+-- Reader-like interface
 askR   :: (Monad m, In' c (RModule r) mods) => EffT' c mods errs m r
 asksR  :: (Monad m, In' c (RModule r) mods) => (r -> a) -> EffT' c mods errs m a
 localR :: (Monad m, In' c (RModule r) mods)
        => (r -> r) -> EffT' c mods errs m a -> EffT' c mods errs m a
 
--- State‑like interface
+-- State-like interface
 getS   :: (Monad m, In' c (SModule s) mods) => EffT' c mods errs m s
 getsS  :: (Monad m, In' c (SModule s) mods) => (s -> a) -> EffT' c mods errs m a
 putS   :: (Monad m, In' c (SModule s) mods) => s -> EffT' c mods errs m ()
@@ -392,7 +392,7 @@ runSModule_  :: (ConsFDataList c (SModule s : mods), Monad m)
 
 ### RS.Class – `MonadReadOnly`, `MonadReadable`, `MonadStateful`
 
-`Control.Monad.RS.Class` defines type‑class interfaces similar to `MonadReader`/`MonadState`, but *without* functional dependencies, so a single monad can have many readable and stateful values:
+`Control.Monad.RS.Class` defines type-class interfaces similar to `MonadReader`/`MonadState`, but *without* functional dependencies, so a single monad can have many readable and stateful values:
 
 ```haskell
 class Monad m => MonadReadOnly r m where
@@ -481,7 +481,7 @@ computeAverageFromFile fp = do
   when (null content) $
     effThrowIn (errorText @"empty-file" "file is empty")
 
-  -- Turn a 'Maybe' into an ad‑hoc algebraic error and immediately handle it.
+  -- Turn a 'Maybe' into an ad-hoc algebraic error and immediately handle it.
   parsed <- pureMaybeInWith (errorText @"parse-error" "parse error") (parse content)
               `effCatch` \(_ :: ErrorText "parse-error") ->
                 pure [0]
@@ -546,7 +546,7 @@ This is very useful when:
 
 ### Scoped module initialisation
 
-For scoped initialisation and teardown, many projects define higher‑level wrappers around the `Loadable`/`withModule` pattern. A (simplified) example from a real project:
+For scoped initialisation and teardown, many projects define higher-level wrappers around the `Loadable`/`withModule` pattern. A (simplified) example from a real project:
 
 ```haskell
 runApp
@@ -566,7 +566,7 @@ runApp app = do
   case optionsToSettings opts of
     Nothing       -> putStrLn "Invalid options provided."
     Just settings -> do
-      -- Initialise loggers (implementation‑specific).
+      -- Initialise loggers (implementation-specific).
       baseStdLogger  <- ...
       baseFileLogger <- ...
       let logger = baseStdLogger <> baseFileLogger
@@ -584,13 +584,13 @@ runApp app = do
           app
 ```
 
-The exact set of modules (`PrometheusMan`, `LoggingModuleB`, …) is project‑specific, but the pattern is always:
+The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is project-specific, but the pattern is always:
 
 > build an `EffT` stack of modules, run your application logic there, then eliminate modules and errors with the provided runners.
 
 ### Large application: a bot with many modules
 
-In a larger system you might have many modules and a domain‑specific error list. (Taken from a real‑world bot application.)
+In a larger system you might have many modules and a domain-specific error list. (Taken from a real-world bot application.)
 
 ```haskell
 -- The modules loaded into the bot
@@ -673,14 +673,14 @@ runBot bot meow = do
     $ meow
 ```
 
-The details of `withMeowActionQueue`, `withRecvSentCQ`, `withProxyWS`, etc. are application‑specific, but the pattern is always:
+The details of `withMeowActionQueue`, `withRecvSentCQ`, `withProxyWS`, etc. are application-specific, but the pattern is always:
 
 - each `withX` introduces one or more modules into the `EffT` stack and arranges their initial `ModuleRead`/`ModuleState`; and
 - the final `Meow` computation runs in a rich module environment, with its error list (`MeowErrs`) tracking only the domain errors that matter at that layer.
 
 ### Example : database access
 
-You can also use the type system to enforce that certain low‑level errors are handled at the call‑site. A typical pattern is to wrap a database action so it:
+You can also use the type system to enforce that certain low-level errors are handled at the call-site. A typical pattern is to wrap a database action so it:
 
 - requires a specific module to be present; and
 - requires a specific error to be in the error list:
@@ -777,7 +777,7 @@ Try/catch style:
   - `Module` – defines `ModuleRead` and `ModuleState` associated data families
   - `SystemModule` – extends `Module` with `ModuleEvent` and `ModuleInitData`
   - `Loadable c mod mods es` – provides `withModule` for scoped module initialisation
-- System‑wide aliases:
+- System-wide aliases:
   - `SystemRead c mods`, `SystemState c mods`
   - `SystemEvent mods`, `SystemInitData c mods`
   - `SystemError`
@@ -789,7 +789,7 @@ Try/catch style:
 
 ### Bracket patterns and concurrency
 
-Resource‑safe patterns:
+Resource-safe patterns:
 
 - `maskEffT` – `mask` in the base monad while staying in `EffT'`
 - `generalBracketEffT`, `generalBracketEffT'`
@@ -819,11 +819,11 @@ From `Module.RS`:
 - Convenience:
   - `askR`, `asksR`, `localR`
   - `getS`, `getsS`, `putS`, `modifyS`
-  - `readOnly` – treat a state module as a read‑only module inside a scope
+  - `readOnly` – treat a state module as a read-only module inside a scope
 
 From `Control.Monad.RS.Class`:
 
-- `MonadReadOnly r m`, `MonadReadable r m`, `MonadStateful s m` – reader/state‑like APIs without functional dependencies; `EffT'` has instances for these.
+- `MonadReadOnly r m`, `MonadReadable r m`, `MonadStateful s m` – reader/state-like APIs without functional dependencies; `EffT'` has instances for these.
 
 From `Control.Monad.Class.Except`:
 
@@ -863,11 +863,11 @@ Generates (conceptually):
 
 ## Performance, style and benchmarks
 
-The core `EffT` design is **very optimisation‑friendly**:
+The core `EffT` design is **very optimisation-friendly**:
 
 - modules are stored in a specialised data family `FData`, not a linked list;
-- `FData` is generated by Template Haskell up to a fixed length (e.g. `FData3`, `FData4`, …) with strict fields; and
-- GHC can often optimise `EffT`‑based code down to tight loops, competitive with or better than hand‑written `StateT`/`ExceptT` stacks.
+- `FData` is generated by Template Haskell up to a fixed length (e.g. `FData3`, `FData4`, ...) with strict fields; and
+- GHC can often optimise `EffT`-based code down to tight loops, competitive with or better than hand-written `StateT`/`ExceptT` stacks.
 
 The benchmarks in `benchmark/` compare:
 
@@ -906,7 +906,7 @@ See the `benchmark` folder for more benchmarks. The benchmarks are copied from `
 
 ### Flags
 
-GHC’s type‑checker sometimes needs more fuel for large module/error lists. It is recommended to build with:
+GHC’s type-checker sometimes needs more fuel for large module/error lists. It is recommended to build with:
 
 ```bash
 -fconstraint-solver-iterations=16
@@ -921,7 +921,7 @@ or slightly higher when using very deep stacks.
 - package a concrete implementation (e.g. Prometheus counter, HTTP manager, database connection pool) directly into a module; or
 - use a more “algebraic effects” style, where modules carry *handlers* for an algebraic effect GADT.
 
-An example of the latter is a Prometheus counter module that carries a handler as read‑only state
+An example of the latter is a Prometheus counter module that carries a handler as read-only state
 
 ```haskell
 {-# LANGUAGE DataKinds, TypeFamilies, RequiredTypeArguments #-}
