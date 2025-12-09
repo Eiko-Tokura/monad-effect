@@ -799,7 +799,7 @@ Resource‑safe patterns:
 Concurrency:
 
 - `forkEffT` – fork an `EffT` computation onto a new thread
-- `forkEffTFinally`, `forkEffTSafe` – variants with finalisers and better error handling
+- `forkEffTFinally` – variants with finalisers
 - `asyncEffT`, `withAsyncEffT`, `withAsyncEffT'` – integrate `async` with `EffT`
 - `restoreAsync`, `restoreAsync_` – restore an `EffT` computation from an `Async` result
 
@@ -916,12 +916,74 @@ or slightly higher when using very deep stacks.
 
 ### Style and module design
 
-`monad-effect` does **not** impose a particular way to structure your modules. You can:
+`monad-effect` does not impose a particular way to structure your modules. You can:
 
 - package a concrete implementation (e.g. Prometheus counter, HTTP manager, database connection pool) directly into a module; or
 - use a more “algebraic effects” style, where modules carry *handlers* for an algebraic effect GADT.
 
-An example of the latter (from the existing README) is a Prometheus counter module that carries a handler as read‑only state; this style continues to work unchanged and is encouraged where it makes your code cleaner.
+An example of the latter is a Prometheus counter module that carries a handler as read‑only state
+
+```haskell
+{-# LANGUAGE DataKinds, TypeFamilies, RequiredTypeArguments #-}
+module Module.Prometheus.Counter where
+
+import Control.Monad.Effect
+import System.Metrics.Prometheus.Metric.Counter as C
+
+-- | A prometheus counter module that has a name
+data PrometheusCounter (name :: k)
+
+-- | Counter effects written in algebraic effect style
+data PrometheusCounterEffect a where
+  AddAndSampleCounter :: Int -> PrometheusCounterEffect CounterSample
+  AddCounter          :: Int -> PrometheusCounterEffect ()
+  IncCounter          ::        PrometheusCounterEffect ()
+  SetCounter          :: Int -> PrometheusCounterEffect ()
+  SampleCounter       ::        PrometheusCounterEffect CounterSample
+
+-- | The effect handler type for a prometheus counter with given counter name
+type PrometheusCounterHandler (name :: k) = forall c mods es m a. (In' c (PrometheusCounter name) mods, MonadIO m) => PrometheusCounterEffect a -> EffT' c mods es m a
+
+-- | The module is declared as a reader module that carries a counter handler
+instance Module (PrometheusCounter name) where
+  newtype ModuleRead  (PrometheusCounter name) = PrometheusCounterRead { prometheusCounterHandler :: PrometheusCounterHandler name }
+  data    ModuleState (PrometheusCounter name) = PrometheusCounterState
+
+-- | Specify / interpret a counter effect with given counter name
+runPrometheusCounter
+  :: forall name
+  -> ( ConsFDataList c (PrometheusCounter name : mods)
+     , Monad m
+     )
+  => PrometheusCounterHandler name -> EffT' c (PrometheusCounter name ': mods) es m a -> EffT' c mods es m a
+runPrometheusCounter name handler = runEffTOuter_ (PrometheusCounterRead @_ @name handler) PrometheusCounterState
+{-# INLINE runPrometheusCounter #-}
+
+-- | Carry out a counter effect with given counter name
+prometheusCounterEffect :: forall name -> (In' c (PrometheusCounter name) mods, MonadIO m) => PrometheusCounterEffect a -> EffT' c mods es m a
+prometheusCounterEffect name eff = do
+  PrometheusCounterRead handler <- askModule @(PrometheusCounter name)
+  handler eff
+{-# INLINE prometheusCounterEffect #-}
+
+-- | Use a specific counter to carry out a counter effect
+useCounter :: Counter -> PrometheusCounterHandler name
+useCounter counter IncCounter              = liftIO $ C.inc counter
+useCounter counter (AddCounter n)          = liftIO $ C.add n counter
+useCounter counter (SetCounter n)          = liftIO $ C.set n counter
+useCounter counter (AddAndSampleCounter n) = liftIO $ C.addAndSample n counter
+useCounter counter SampleCounter           = liftIO $ C.sample counter
+{-# INLINE useCounter #-}
+
+-- | A counter handler that does nothing
+noCounter :: Monad m => PrometheusCounterEffect a -> EffT mods es m a
+noCounter IncCounter              = pure ()
+noCounter (AddCounter _)          = pure ()
+noCounter (SetCounter _)          = pure ()
+noCounter (AddAndSampleCounter _) = pure (CounterSample 0)
+noCounter SampleCounter           = pure (CounterSample 0)
+{-# INLINE noCounter #-}
+```
 
 ---
 
