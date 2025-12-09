@@ -13,7 +13,29 @@ Most users will work with the `Eff` / `EffT` type aliases and the built-in reade
 
 ---
 
-## Project Title & Intuition
+- [Project Intuition](#project-intuition)
+- [Key Features](#key-features)
+  - [Algebraic exceptions](#algebraic-exceptions)
+  - [Purity](#purity)
+  - [Flexible and modular](#flexible-and-modular)
+- [Core Types and Abstractions](#core-types-and-abstractions)
+  - [EffT, Eff and EffT'](#efft-eff-and-efft)
+  - [Result and EList - algebraic error lists](#result-and-elist---algebraic-error-lists)
+  - [Named error types - ErrorText, ErrorValue, MonadExcept](#named-error-types---errortext-errorvalue-monadexcept)
+  - [Modules and the system view](#modules-and-the-system-view)
+  - [Built-in Reader/State modules: RModule and SModule](#built-in-readerstate-modules-rmodule-and-smodule)
+  - [RS.Class - `MonadReadOnly`, `MonadReadable`, `MonadStateful`](#rsclass--monadreadonly-monadreadable-monadstateful)
+- [Getting Started - Examples](#getting-started---examples)
+  - [Quick start - algebraic state and errors](#quick-start---algebraic-state-and-errors)
+  - [Embedding and reshaping effects](#embedding-and-reshaping-effects)
+  - [Scoped module initialisation](#scoped-module-initialisation)
+  - [Large application - a bot with many modules](#large-application---a-bot-with-many-modules)
+  - [Example - database access](#example---database-access)
+- [Selected API Reference](#selected-api-reference)
+  - [Core monad and runners](#core-monad-and-runners)
+  - [Error machinery](#error-machinery)
+
+## Project Intuition
 
 At a high level you can think of:
 
@@ -145,7 +167,7 @@ The result is a small set of primitives that scale well to large applications wi
 
 ---
 
-## Core Abstractions (The Formal Layer)
+## Core Types and Abstractions
 
 This section spells out the main types and how they fit together. All snippets in this section are taken directly from the library, except where explicitly marked as simplified.
 
@@ -337,7 +359,7 @@ modifyModule :: (Monad m, In' c mod mods, Module mod)
 
 The `SystemModule`/`ModuleEvent`/`ModuleInitData` pieces are primarily used by higher-level orchestration helpers (e.g. scoped initialisation via `withModule`).
 
-### Built-in Reader/State modules: RModule and SModule
+### Built-in Reader/State modules - RModule and SModule
 
 The `Module.RS` module gives you ready-made reader/state modules and helpers to integrate existing `ReaderT`/`StateT` code.
 
@@ -413,11 +435,11 @@ Instances are provided for `EffT'` and for monad transformers.
 
 ---
 
-## Getting Started (The Intuitive Layer)
+## Getting Started - Examples
 
 This section focuses on how to *use* the core abstractions.
 
-### Quick start: algebraic state + errors
+### Quick start - algebraic state and errors
 
 A small (made-up) example that:
 
@@ -588,7 +610,7 @@ The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is project-spe
 
 > build an `EffT` stack of modules, run your application logic there, then eliminate modules and errors with the provided runners.
 
-### Large application: a bot with many modules
+### Large application - a bot with many modules
 
 In a larger system you might have many modules and a domain-specific error list. (Taken from a real-world bot application.)
 
@@ -678,7 +700,7 @@ The details of `withMeowActionQueue`, `withRecvSentCQ`, `withProxyWS`, etc. are 
 - each `withX` introduces one or more modules into the `EffT` stack and arranges their initial `ModuleRead`/`ModuleState`; and
 - the final `Meow` computation runs in a rich module environment, with its error list (`MeowErrs`) tracking only the domain errors that matter at that layer.
 
-### Example : database access
+### Example - database access
 
 You can also use the type system to enforce that certain low-level errors are handled at the call-site. A typical pattern is to wrap a database action so it:
 
@@ -716,11 +738,11 @@ Here `effCatch` both catches the database error and removes `ErrorText "meowData
 
 ---
 
-## API Reference (Selected)
+## Selected API Reference
 
 This section is **not** exhaustive. It highlights key exports; for full details, please consult the Haddock documentation.
 
-### Core monad & runners
+### Core monad and runners
 
 - `Eff mods es a`, `EffT mods es m a`, `Pure mods es a`, `ResultT es m a`, `IO' es m a`
 - `runEffT`, `runEffT_`, `runEffT0`, `runEffT00`, `runEffT01`, `runResultT`
