@@ -165,7 +165,13 @@ You can:
 
 The result is a small set of primitives that scale well to large applications with many modules such as database access, HTTP clients, metrics, logging, and domain-specific state.
 
----
+### Performant
+
+The core transformer `EffT'` is one single layer and the `FData` data family is designed to be optimisation-friendly. The fact that we did not use complicated data structure nor `IO` for storing data means GHC can optimize, inline the data constructors, utilizing purity.
+
+This gives blazingly fast performance, benchmarks (countdown, local state, deep catch) shows `monad-effect` is top-1 in most of the benchmarks, top-2 in some other ones. (See the last section for some benchmark pictures).
+
+It is completely feasible to use `monad-effect` for pure single-threaded stateful tight loops with little or no extra overhead.
 
 ## Core Types and Abstractions
 
@@ -412,6 +418,18 @@ runSModule_  :: (ConsFDataList c (SModule s : mods), Monad m)
              -> EffT' c mods errs m a
 ```
 
+Integrating with `ReaderT`/`StateT` (more in `Module.RS`):
+
+```haskell
+liftReaderT :: forall r mods errs m c a. (Monad m, In' c (RModule r) mods)
+            => ReaderT r m a
+            -> EffT' c mods errs m a
+
+embedReaderT :: forall r mods errs m c a. (Monad m, In' c (RModule r) mods)
+             => ReaderT r (EffT' c mods errs m) a
+             -> EffT' c mods errs m a
+```
+
 ### RS.Class - `MonadReadOnly`, `MonadReadable`, `MonadStateful`
 
 `Control.Monad.RS.Class` defines type-class interfaces similar to `MonadReader`/`MonadState`, but *without* functional dependencies, so a single monad can have many readable and stateful values:
@@ -498,7 +516,7 @@ computeAverageFromFile
        Double
 computeAverageFromFile fp = do
   -- Capture 'IOException' from 'readFile' as an algebraic error.
-  content <- embedError . liftIOException $ readFile fp
+  content <- embedError . liftIOException $ readFile' fp
 
   when (null content) $
     effThrowIn (errorText @"empty-file" "file is empty")
@@ -561,10 +579,7 @@ embedError
   -> EffT' c mods es' m a
 ```
 
-This is very useful when:
-
-- you have a reusable component that only needs a subset of modules; or
-- you want to **add a new error type** around an existing effect and then project back.
+This is very useful when you have a reusable component that only needs a subset of modules.
 
 ### Scoped module initialisation
 
@@ -606,7 +621,7 @@ runApp app = do
           app
 ```
 
-The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is either project-specific / reusable components you can build between projects, but the pattern is always:
+The exact set of modules (`PrometheusMan`, `LoggingModuleB`, ...) is either project-specific or reusable components you can build between projects, but the pattern is always:
 
 > build an `EffT` stack of modules, run your application logic there, then eliminate modules and errors with the provided runners.
 
@@ -666,7 +681,7 @@ runBot
        IO
        ()
 runBot bot meow = do
-  -- Convert a plain value into a module (implementation-specific).
+  -- embed some code into a larger context
   botModule <- embedEffT $ botInstanceToModule bot
 
   -- Build additional configuration/state modules...
@@ -740,7 +755,7 @@ Here `effCatch` both catches the database error and removes `ErrorText "meowData
 
 ## Selected API Reference
 
-This section is **not** exhaustive. It highlights key exports; for full details, please consult the Haddock documentation.
+This section is not exhaustive. It highlights key exports; for full details, please consult the Haddock documentation.
 
 ### Core monad and runners
 
@@ -757,14 +772,13 @@ This section is **not** exhaustive. It highlights key exports; for full details,
 - Types: `Result es a`, `EList es`, `SystemError`
 - Named wrappers: `ErrorText s`, `ErrorValue s v`, `errorText`, `errorValue`
 - Throwing:
-  - `effThrowIn`, `effThrow` - throw an error that is already in the list
+  - `effThrowIn`, `effThrow` - throw an error
   - `effThrowEList`, `effThrowEListIn` - throw multiple errors via `EList`
   - `MonadExcept e m` integration (e.g. via `tryAndThrow`, `tryAndThrowText`)
 - Catching:
   - `effCatch` - catch the *first* error in the list
   - `effCatchIn` - catch a *specific* error type and remove it from the list
   - `effCatchAll` - catch all algebraic errors as an `EList es`
-  - `effCatchSystem` - catch `SystemError`
 - Converting errors:
   - `errorToEither`, `errorToEitherAll`, `eitherAllToEffect`
   - `errorInToEither`, `errorToMaybe`, `errorInToMaybe`, `errorToResult`
