@@ -78,6 +78,7 @@ module Control.Monad.Effect
   -- * No Error
   , checkNoError
   , declareNoError
+  , unsafeDeclareNoError
   , embedNoError
   , NoError
 
@@ -500,7 +501,7 @@ withAsyncEffT
 withAsyncEffT = \action use -> do
   tmvar <- liftBase newEmptyTMVarIO
   maskEffT $ \unmaskEffT -> do
-    tid <- embedNoError $ declareNoError $ liftBaseWith $ \runInBase ->
+    tid <- embedNoError $ unsafeDeclareNoError $ liftBaseWith $ \runInBase ->
       forkIO $ E.try @SomeException (runInBase $ unmaskEffT action)
         >>= liftBase . atomically . writeTMVar tmvar
     let asyncHandle = Async tid (readTMVar tmvar)
@@ -528,7 +529,7 @@ withAsyncEffT'
 withAsyncEffT' = \action use -> do
   tmvar <- liftBase newEmptyTMVarIO
   maskEffT $ \unmaskEffT -> do
-    tid <- embedNoError $ declareNoError $ liftBaseWith $ \runInBase ->
+    tid <- embedNoError $ unsafeDeclareNoError $ liftBaseWith $ \runInBase ->
       forkIO $ E.try @SomeException (runInBase $ unmaskEffT action)
         >>= liftBase . atomically . writeTMVar tmvar
     let asyncHandle = Async tid (readTMVar tmvar)
@@ -794,6 +795,12 @@ modifyModule f = modify @(SystemState c mods) (modifyIn f)
 declareNoError :: Monad m => EffT' c mods es m a -> EffT' c mods NoError m a
 declareNoError eff = eff `effCatchAll` \_es -> error "declareNoError: declared NoError, but got errors"
 {-# INLINE declareNoError #-}
+{-# DEPRECATED declareNoError "Use unsafeDeclareNoError instead." #-}
+
+-- | Declare that the computation has no error, it just discards the error types. When the error actually happen it will be runtime exception.
+unsafeDeclareNoError :: Monad m => EffT' c mods es m a -> EffT' c mods NoError m a
+unsafeDeclareNoError eff = eff `effCatchAll` \_es -> error "declareNoError: declared NoError, but got errors"
+{-# INLINE unsafeDeclareNoError #-}
 
 -- | lift IO action into EffT, catch IOException and return as Left, synonym for effIOSafe
 liftIOException :: MonadIO m => IO a -> EffT' c mods '[IOException] m a
