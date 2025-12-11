@@ -8,6 +8,8 @@ import Data.String (IsString)
 import Data.Text (Text, unpack, pack)
 import Data.Typeable (Typeable)
 import GHC.TypeLits
+import Control.Monad
+import Control.Monad.Base
 
 -- | a newtype wrapper ErrorText that wraps a Text with a name (for example Symbol type)
 -- useful for creating ad-hoc error type
@@ -81,3 +83,12 @@ instance Monad m => MonadExcept e (ExceptT e m) where
 -- @since 0.2.2.0
 instance (Monad m, KnownSymbol s) => MonadExcept (ErrorText s) (ExceptT (Text, Text) m) where
   throwExcept (ErrorText t) = throwError (pack $ symbolVal (Proxy @s), t)
+
+------------ Some convertion functions ------------
+
+-- | Lift from ExceptT to any MonadExcept (e.g. EffT)
+--
+-- @since 0.2.3.0
+liftExceptT :: (MonadBase n m, MonadExcept e m) => ExceptT e n a -> m a
+liftExceptT = either throwExcept pure <=< liftBase . runExceptT
+{-# INLINE liftExceptT #-}
