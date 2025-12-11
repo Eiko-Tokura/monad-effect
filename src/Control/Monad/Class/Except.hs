@@ -60,8 +60,14 @@ instance (KnownSymbol s, Typeable v, Show v) => Exception (ErrorValue s v)
 class Monad m => MonadExcept e m where
   throwExcept :: e -> m a
 
+-- | This instance has no warning because it is understood that IO comes with SomeException.
+--
+-- @since 0.2.3.0
+instance {-# OVERLAPPING #-} MonadExcept SomeException IO where
+  throwExcept = throwIO
+
 -- | @since 0.2.2.0
-instance Exception e => MonadExcept e IO where
+instance {-# WARNING in "x-monad-except-io" "Exception thrown into IO here, remember to deal with it. Use explicit algebraic errors wherever possible or disable the warning (per file or per project) with -Wno-x-monad-except-io." #-} Exception e => MonadExcept e IO where
   throwExcept = throwIO
 
 -- | @since 0.2.2.0
