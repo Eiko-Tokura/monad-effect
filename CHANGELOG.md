@@ -21,3 +21,13 @@
 * Adding `withAsyncEffT'` helper, generalized certain type signatures
 
 * Adding Exception instances and `tryAndThrow` IO utilities
+
+## 0.2.3.0 -- 2025-12-13
+
+* Fix bogus instance logic of NonEmptySubList, used in effThrowEListIn adding liftExceptT helpers
+
+* Adding certain warnings and rename declareNoError to unsafeDeclareNoError
+
+* Adding type-apply helpers like `applyMods`, `applyErrors`, etc.
+
+* refine README.md
