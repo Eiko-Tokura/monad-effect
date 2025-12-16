@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Control.Monad.Class.Except where
 
 import Control.Exception as E
@@ -66,8 +67,17 @@ class Monad m => MonadExcept e m where
 instance {-# OVERLAPPING #-} MonadExcept SomeException IO where
   throwExcept = throwIO
 
+-- Added in 0.2.3.1
+-- to make things compile ghc < 9.8.1
+#if __GLASGOW_HASKELL__ >= 910
+#define WARN_ONLY_910(cat,msg) {-# WARNING in cat msg #-}
+#else
+#define WARN_ONLY_910(cat,msg)
+#endif
+
 -- | @since 0.2.2.0
-instance {-# WARNING in "x-monad-except-io" "Exception thrown into IO here, remember to deal with it. Use explicit algebraic errors wherever possible or disable the warning (per file or per project) with -Wno-x-monad-except-io." #-} Exception e => MonadExcept e IO where
+instance WARN_ONLY_910("x-monad-except-io", "Exception thrown into IO here, remember to deal with it. Use explicit algebraic errors wherever possible or disable the warning (per file or per project) with -Wno-x-monad-except-io.")
+  Exception e => MonadExcept e IO where
   throwExcept = throwIO
 
 -- | @since 0.2.2.0

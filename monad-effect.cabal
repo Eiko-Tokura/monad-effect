@@ -7,7 +7,7 @@ name:               monad-effect
 -- PVP summary:     +-+------- breaking API changes
 --                  | | +----- non-breaking API additions
 --                  | | | +--- code changes with no API change
-version:            0.2.3.0
+version:            0.2.3.1
 
 -- A short (one-line) description of the package.
 synopsis:  A fast and lightweight effect system.
@@ -41,6 +41,9 @@ extra-doc-files: CHANGELOG.md
 
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
+
+tested-with: GHC == 9.12.2
+           , GHC == 9.6.7
 
 source-repository head
   type: git
@@ -132,6 +135,7 @@ library
                       , TypeFamilies
                       , TypeApplications
                       , TemplateHaskell
+                      , CPP
 test-suite monad-effect-test
     -- Import common warning flags.
     import:           warnings
