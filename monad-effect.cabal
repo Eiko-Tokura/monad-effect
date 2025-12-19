@@ -135,7 +135,6 @@ library
                       , TypeFamilies
                       , TypeApplications
                       , TemplateHaskell
-                      , CPP
 test-suite monad-effect-test
     -- Import common warning flags.
     import:           warnings
