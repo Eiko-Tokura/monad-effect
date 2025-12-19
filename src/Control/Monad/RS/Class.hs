@@ -4,6 +4,8 @@
 module Control.Monad.RS.Class where
 
 import Control.Monad.Trans
+import qualified Control.Monad.Reader as R
+import qualified Control.Monad.State  as S
 
 -- | A class for monads that can read a value of type 'r'.
 -- without the functional dependencies, so you can read different types of values
@@ -52,4 +54,23 @@ instance {-# OVERLAPPABLE #-} (MonadTrans t, MonadStateful s m) => MonadStateful
   put = lift . put
   {-# INLINE put #-}
   modify = lift . modify
+  {-# INLINE modify #-}
+
+-- | @since 0.2.4.0
+instance Monad m => MonadReadOnly r (R.ReaderT r m) where
+  query = R.ask
+  {-# INLINE query #-}
+
+-- | @since 0.2.4.0
+instance Monad m => MonadReadable r (R.ReaderT r m) where
+  local = R.local
+  {-# INLINE local #-}
+
+-- | @since 0.2.4.0
+instance Monad m => MonadStateful s (S.StateT s m) where
+  get = S.get
+  {-# INLINE get #-}
+  put = S.put
+  {-# INLINE put #-}
+  modify = S.modify
   {-# INLINE modify #-}
